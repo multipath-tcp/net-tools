@@ -156,6 +156,7 @@ int flag_cf  = 0;
 int flag_opt = 0;
 int flag_raw = 0;
 int flag_tcp = 0;
+int flag_mptcp = 0;
 int flag_sctp= 0;
 int flag_udp = 0;
 int flag_udplite = 0;
@@ -1060,6 +1061,83 @@ static int tcp_info(void)
 	       tcp_do_one, "tcp", "tcp6");
 }
 
+static void mptcp_do_one(int lnr, const char *line, const char *prot)
+{
+	int d, ipv6, num, local_port, rem_port, state, nsub;
+	unsigned long txq, rxq, local_token, remote_token;
+	char rem_addr[128], local_addr[128];
+	struct aftype *ap;
+#if HAVE_AFINET6
+	struct sockaddr_in6 localaddr, remaddr;
+	char addr6[INET6_ADDRSTRLEN];
+	struct in6_addr in6;
+	extern struct aftype inet6_aftype;
+#else
+	struct sockaddr_in localaddr, remaddr;
+#endif
+
+	if (lnr == 0)
+		return;
+
+	num = sscanf(line, "%d: %lX %lX %d %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X "
+			"%X %X %lX:%lX\n", &d, &local_token, &remote_token, 
+			&ipv6, local_addr, &local_port, rem_addr, &rem_port, 
+			&state, &nsub, &txq, &rxq);
+
+        if (strlen(local_addr) > 8) {
+#if HAVE_AFINET6
+		/* Demangle what the kernel gives us */
+		sscanf(local_addr, "%08X%08X%08X%08X",
+			&in6.s6_addr32[0], &in6.s6_addr32[1],
+			&in6.s6_addr32[2], &in6.s6_addr32[3]);
+		inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
+		inet6_aftype.input(1, addr6, (struct sockaddr *) &localaddr);
+		sscanf(rem_addr, "%08X%08X%08X%08X",
+			&in6.s6_addr32[0], &in6.s6_addr32[1],
+			&in6.s6_addr32[2], &in6.s6_addr32[3]);
+		inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
+		inet6_aftype.input(1, addr6, (struct sockaddr *) &remaddr);
+		localaddr.sin6_family = AF_INET6;
+		remaddr.sin6_family = AF_INET6;
+#endif
+} else {
+		sscanf(local_addr, "%X",
+			&((struct sockaddr_in *) &localaddr)->sin_addr.s_addr);
+		sscanf(rem_addr, "%X",
+			&((struct sockaddr_in *) &remaddr)->sin_addr.s_addr);
+		((struct sockaddr *) &localaddr)->sa_family = AF_INET;
+		((struct sockaddr *) &remaddr)->sa_family = AF_INET;
+        }
+
+	if (num < 12) {
+		fprintf(stderr, _("warning, got bogus mptcp line.\n"));
+		return;
+        }
+
+	if ((ap = get_afntype(((struct sockaddr *) &localaddr)->sa_family)) == NULL) {
+		fprintf(stderr, _("netstat: unsupported address family %d !\n"),
+			((struct sockaddr *) &localaddr)->sa_family);
+		return;
+	}
+
+	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localaddr, local_port, "tcp");
+	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remaddr, rem_port, "tcp");
+
+	printf("%-4s %6ld %6ld %-*s %-*s %-11s",
+		prot, rxq, txq, (int)netmax(23,strlen(local_addr)), local_addr,
+		(int)netmax(23,strlen(rem_addr)), rem_addr, _(tcp_state[state]));
+
+	if (flag_mptcp)
+		 printf(" %-11ld %-12ld", local_token, remote_token);
+
+	finish_this_one(0, 0, NULL);
+}
+
+static int mptcp_info(void)
+{
+    INFO_GUTS(_PATH_PROCNET_MPTCP, "AF INET (mptcp)", mptcp_do_one, "mptcp");
+}
+
 static void udp_do_one(int lnr, const char *line,const char *prot)
 {
     char local_addr[64], rem_addr[64];
@@ -1852,7 +1930,7 @@ static void usage(void)
     fprintf(stderr, _("        -Z, --context            display SELinux security context for sockets\n"));
 #endif
 
-    fprintf(stderr, _("\n  <Socket>={-t|--tcp} {-u|--udp} {-U|--udplite} {-w|--raw} {-x|--unix}\n"));
+    fprintf(stderr, _("\n  <Socket>={-t|--tcp} {-m|--mptcp} {-u|--udp} {-U|--udplite} {-w|--raw} {-x|--unix}\n"));
     fprintf(stderr, _("           --ax25 --ipx --netrom\n"));
     fprintf(stderr, _("  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: %s\n"), DFLT_AF);
     fprintf(stderr, _("  List of possible address families (which support routing):\n"));
@@ -1877,6 +1955,7 @@ int main
 #endif
 	{"protocol", 1, 0, 'A'},
 	{"tcp", 0, 0, 't'},
+	{"mptcp", 0, 0, 'm'},
 	{"sctp", 0, 0, 'S'},
 	{"udp", 0, 0, 'u'},
         {"udplite", 0, 0, 'U'},
@@ -1913,7 +1992,7 @@ int main
     getroute_init();		/* Set up AF routing support */
 
     afname[0] = '\0';
-    while ((i = getopt_long(argc, argv, "A:CFMacdeghilnNoprsStuUvVWwx64?Z", longopts, &lop)) != EOF)
+    while ((i = getopt_long(argc, argv, "A:CFMacdeghilnNoprsStmuUvVWwx64?Z", longopts, &lop)) != EOF)
 	switch (i) {
 	case -1:
 	    break;
@@ -2004,6 +2083,9 @@ int main
 	case 't':
 	    flag_tcp++;
 	    break;
+	case 'm':
+	    flag_mptcp++;
+	    break;
 	case 'S':
 	    flag_sctp++;
 	    break;
@@ -2051,17 +2133,17 @@ int main
 	usage();
 
     if ((flag_inet || flag_inet6 || flag_sta) && 
-        !(flag_tcp || flag_sctp || flag_udp || flag_udplite || flag_raw))
-	   flag_tcp = flag_sctp = flag_udp = flag_udplite = flag_raw = 1;
+        !(flag_tcp || flag_sctp || flag_mptcp || flag_udp || flag_udplite || flag_raw))
+	   flag_tcp = flag_mptcp = flag_sctp = flag_udp = flag_udplite = flag_raw = 1;
 
-    if ((flag_tcp || flag_sctp || flag_udp || flag_udplite || flag_raw || flag_igmp) && 
+    if ((flag_tcp || flag_sctp || flag_mptcp || flag_udp || flag_udplite || flag_raw || flag_igmp) && 
         !(flag_inet || flag_inet6))
         flag_inet = flag_inet6 = 1;
 
     if (flag_bluetooth && !(flag_l2cap || flag_rfcomm))
 	   flag_l2cap = flag_rfcomm = 1;
 
-    flag_arg = flag_tcp + flag_sctp + flag_udplite + flag_udp + flag_raw + flag_unx 
+    flag_arg = flag_tcp + flag_mptcp +flag_sctp + flag_udplite + flag_udp + flag_raw + flag_unx 
         + flag_ipx + flag_ax25 + flag_netrom + flag_igmp + flag_x25 + flag_rose
 	+ flag_l2cap + flag_rfcomm;
 
@@ -2143,7 +2225,7 @@ int main
 	return (i);
     }
     for (;;) {
-	if (!flag_arg || flag_tcp || flag_sctp || flag_udp || flag_udplite || flag_raw) {
+	if (!flag_arg || flag_tcp || flag_mptcp || flag_sctp || flag_udp || flag_udplite || flag_raw) {
 #if HAVE_AFINET
 	    prg_cache_load();
 	    printf(_("Active Internet connections "));	/* xxx */
@@ -2157,6 +2239,8 @@ int main
 		printf(_("(w/o servers)"));
 	    }
 	    printf(_("\nProto Recv-Q Send-Q Local Address           Foreign Address         State      "));	/* xxx */
+	    if (flag_mptcp)
+		    printf(_(" Local Token Remote Token "));
 	    if (flag_exp > 1)
 		printf(_(" User       Inode     "));
 	    print_progname_banner();
@@ -2174,6 +2258,12 @@ int main
 #if HAVE_AFINET
 	if (!flag_arg || flag_tcp) {
 	    i = tcp_info();
+	    if (i)
+		return (i);
+	}
+
+	if (!flag_arg || flag_mptcp) {
+	    i = mptcp_info();
 	    if (i)
 		return (i);
 	}
