@@ -1128,7 +1128,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 		(int)netmax(23,strlen(rem_addr)), rem_addr, _(tcp_state[state]));
 
 	if (flag_mptcp)
-		 printf(" %-11ld %-12ld", local_token, remote_token);
+		 printf(" %-11lu %-12lu", local_token, remote_token);
 
 	finish_this_one(0, 0, NULL);
 }
