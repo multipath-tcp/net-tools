@@ -31,7 +31,7 @@ BASEDIR ?= $(DESTDIR)
 NET_LIB_PATH = lib
 NET_LIB_NAME = net-tools
 
-PROGS	:= ifconfig hostname arp netstat route rarp slattach plipconfig nameif
+PROGS	:= ifconfig arp netstat route rarp slattach plipconfig nameif
 
 -include config.make
 ifeq ($(HAVE_IP_TOOLS),1)
@@ -158,9 +158,6 @@ ifconfig:	$(NET_LIB) ifconfig.o
 nameif:	nameif.o
 		$(CC) $(LDFLAGS) -o nameif nameif.o 
 
-hostname:	hostname.o
-		$(CC) $(LDFLAGS) -o hostname hostname.o $(DNLIB)
-
 route:		$(NET_LIB) route.o
 		$(CC) $(LDFLAGS) -o route route.o $(NLIB) $(RESLIB)
 
@@ -197,7 +194,6 @@ installbin:
 	install -m 0755 -d ${BASEDIR}/sbin
 	install -m 0755 -d ${BASEDIR}/bin
 	install -m 0755 arp        ${BASEDIR}/sbin
-	install -m 0755 hostname   ${BASEDIR}/bin
 	install -m 0755 ifconfig   ${BASEDIR}/bin
 	install -m 0755 nameif     ${BASEDIR}/sbin
 	install -m 0755 netstat    ${BASEDIR}/bin
@@ -212,19 +208,11 @@ endif
 ifeq ($(HAVE_MII),1)
 	install -m 0755 mii-tool   $(BASEDIR)/sbin
 endif
-	ln -fs hostname $(BASEDIR)/bin/dnsdomainname
-	ln -fs hostname $(BASEDIR)/bin/ypdomainname
-	ln -fs hostname $(BASEDIR)/bin/nisdomainname
-	ln -fs hostname $(BASEDIR)/bin/domainname
-ifeq ($(HAVE_AFDECnet),1)
-	ln -fs hostname $(BASEDIR)/bin/nodename
-endif
 
 savebin:
 	@for i in ${BASEDIR}/sbin/arp ${BASEDIR}/sbin/ifconfig \
                  ${BASEDIR}/bin/netstat \
 		 ${BASEDIR}/sbin/rarp ${BASEDIR}/sbin/route \
-		 ${BASEDIR}/bin/hostname ${BASEDIR}/bin/ypdomainname \
                  ${BASEDIR}/bin/dnsdomainname ${BASEDIR}/bin/nisdomainname \
 		 ${BASEDIR}/bin/domainname ; do \
 		 [ -f $$i ] && cp -f $$i $$i.old ; done ; echo Saved.
