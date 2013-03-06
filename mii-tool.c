@@ -29,7 +29,6 @@
 	http://www.national.com/pf/DP/DP83840.html
 */
 
-static char Version[] = "$Id: mii-tool.c,v 1.9 2006/09/27 20:59:18 ecki Exp $\n(Author: David Hinds based on Donald Becker's mii-diag)";
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -55,6 +54,9 @@ static char Version[] = "$Id: mii-tool.c,v 1.9 2006/09/27 20:59:18 ecki Exp $\n(
 #include <linux/sockios.h>
 #include "version.h"
 #include "net-support.h"
+#include "util.h"
+
+static char *Release = RELEASE, *Signature = "David Hinds based on Donald Becker's mii-diag";
 
 #define MAX_ETH		8		/* Maximum # of interfaces */
 #define LPA_ABILITY_MASK	0x07e0
@@ -69,15 +71,21 @@ static const struct {
     { 0x0000, 0x6b90, "AMD 79C901A HomePNA" },
     { 0x0000, 0x6b70, "AMD 79C901A 10baseT" },
     { 0x0181, 0xb800, "Davicom DM9101" },
-    { 0x0043, 0x7411, "Enable EL40-331" },
+    { 0x0043, 0x7410, "Enable EL40-331" },
+    { 0x0243, 0x0c50, "ICPlus IP101A" },
     { 0x0015, 0xf410, "ICS 1889" },
     { 0x0015, 0xf420, "ICS 1890" },
     { 0x0015, 0xf430, "ICS 1892" },
     { 0x02a8, 0x0150, "Intel 82555" },
     { 0x7810, 0x0000, "Level One LXT970/971" },
+    { 0x0022, 0x1510, "Micrel KSZ8041" },
+    { 0x0022, 0x1610, "Micrel KSZ9021" },
     { 0x2000, 0x5c00, "National DP83840A" },
+    { 0x2000, 0x5c70, "National DP83865" },
     { 0x0181, 0x4410, "Quality QS6612" },
     { 0x0282, 0x1c50, "SMSC 83C180" },
+    { 0x0203, 0x8460, "STMicroelectronics ST802RT" },
+    { 0x1c04, 0x0010, "STMicroelectronics STE100P" },
     { 0x0300, 0xe540, "TDK 78Q2120" },
     { 0x0141, 0x0c20, "Yukon 88E1011" },
     { 0x0141, 0x0cc0, "Yukon-EC 88E1111" },
@@ -89,10 +97,10 @@ static const struct {
 
 struct option longopts[] = {
  /* { name  has_arg  *flag  val } */
-    {"advertise",	1, 0, 'A'},	/* Change capabilities advertised. */
-    {"force",		1, 0, 'F'},	/* Change capabilities advertised. */
+    {"advertise",	1, 0, 'A'},	/* Advertise only specified media. */
+    {"force",		1, 0, 'F'},	/* Force specified media technology. */
     {"phy",		1, 0, 'p'},	/* Set PHY (MII address) to report. */
-    {"log",		0, 0, 'l'},	/* Set PHY (MII address) to report. */
+    {"log",		0, 0, 'l'},	/* With --watch, write events to syslog. */
     {"restart",		0, 0, 'r'},	/* Restart link negotiation */
     {"reset",		0, 0, 'R'},	/* Reset the transceiver. */
     {"verbose", 	0, 0, 'v'},	/* Report each action taken.  */
@@ -230,7 +238,7 @@ static const char *media_list(unsigned mask, unsigned mask2, int best)
 
 int show_basic_mii(int sock, int phy_id)
 {
-    char buf[100];
+    char buf[200];
     int i, mii_val[32];
     unsigned bmcr, bmsr, advert, lkpar, bmcr2, lpa2;
 
@@ -263,7 +271,10 @@ int show_basic_mii(int sock, int phy_id)
 		mii_val[i] = mdio_read(sock, i);
 		break;
 	    default:
-		mii_val[i] = 0;
+		if (verbose > 2)
+		    mii_val[i] = mdio_read(sock, i);
+		else
+		    mii_val[i] = 0;
 		break;
         }
 
@@ -374,7 +385,7 @@ static int do_one_xcvr(int skfd, char *ifname, int maybe)
     struct mii_ioctl_data *mii = (struct mii_ioctl_data *)&ifr.ifr_data;
 
     /* Get the vitals from the interface. */
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+    safe_strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
     if (ioctl(skfd, SIOCGMIIPHY, &ifr) < 0) {
 	if (!maybe || (errno != ENODEV))
 	    fprintf(stderr, "SIOCGMIIPHY on '%s' failed: %s\n",
@@ -424,7 +435,7 @@ static void watch_one_xcvr(int skfd, char *ifname, int index)
     int now;
 
     /* Get the vitals from the interface. */
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+    safe_strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
     if (ioctl(skfd, SIOCGMIIPHY, &ifr) < 0) {
 	if (errno != ENODEV)
 	    fprintf(stderr, "SIOCGMIIPHY on '%s' failed: %s\n",
@@ -441,7 +452,7 @@ static void watch_one_xcvr(int skfd, char *ifname, int index)
 /*--------------------------------------------------------------------*/
 
 const char *usage =
-"usage: %s [-VvRrwl] [-A media,... | -F media] <interface ...>\n"
+"usage: %s [-VvRrwl] [-A media,... | -F media] [-p addr] <interface ...>\n"
 "       -V, --version               display version information\n"
 "       -v, --verbose               more verbose output\n"
 "       -R, --reset                 reset MII to poweron state\n"
@@ -450,6 +461,7 @@ const char *usage =
 "       -l, --log                   with -w, write events to syslog\n"
 "       -A, --advertise=media,...   advertise only specified media\n"
 "       -F, --force=media           force specified media technology\n"
+"       -p, --phy=addr              set PHY (MII address) to report\n"
 "media: 1000baseTx-HD, 1000baseTx-FD,\n"
 "       100baseT4, 100baseTx-FD, 100baseTx-HD,\n"
 "       10baseT-FD, 10baseT-HD,\n"
@@ -458,7 +470,7 @@ const char *usage =
 
 static void version(void)
 {
-    fprintf(stderr, "%s\n%s\n", Version, RELEASE);
+    fprintf(stderr, "%s\n%s\n", Release, Signature);
     exit(E_VERSION);
 }
 

@@ -42,19 +42,18 @@
 #include "intl.h"
 #include "net-support.h"
 #include "version.h"
+#include "util.h"
 
 int skfd = -1;
 
 struct ifreq ifr;
 struct plipconf *plip;
 
-char *Release = RELEASE,
-     *Version = "plipconfig 0.2",
-     *Signature = "John Paul Morrison, Alan Cox et al.";
+static char *Release = RELEASE, *Signature = "John Paul Morrison, Alan Cox et al.";
 
 static void version(void)
 {
-    printf("%s\n%s\n%s\n", Release, Version, Signature);
+    printf("%s\n%s\n", Release, Signature);
     exit(E_VERSION);
 }
 
@@ -102,7 +101,7 @@ int main(int argc, char **argv)
 	usage();
 
     spp = argv;
-    strncpy(ifr.ifr_name, *spp++, IFNAMSIZ);
+    safe_strncpy(ifr.ifr_name, *spp++, IFNAMSIZ);
     plip=(struct plipconf *)&ifr.ifr_data;
 
     plip->pcmd = PLIP_GET_TIMEOUT;	/* get current settings for device */

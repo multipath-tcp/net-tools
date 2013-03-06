@@ -55,8 +55,8 @@ endif
 
 # -------- end of user definitions --------
 
-MAINTAINER = Philip.Blundell@pobox.com
-RELEASE	   = 1.60
+MAINTAINER = net-tools-devel@lists.sourceforge.net
+RELEASE	   = 2.10-alpha
 
 .EXPORT_ALL_VARIABLES:
 
@@ -155,8 +155,8 @@ subdirs:	libdir
 ifconfig:	$(NET_LIB) ifconfig.o
 		$(CC) $(LDFLAGS) -o ifconfig ifconfig.o $(NLIB) $(RESLIB)
 		
-nameif:	nameif.o
-		$(CC) $(LDFLAGS) -o nameif nameif.o 
+nameif:		$(NET_LIB) nameif.o
+		$(CC) $(LDFLAGS) -o nameif nameif.o $(NLIB) $(RESLIB)
 
 route:		$(NET_LIB) route.o
 		$(CC) $(LDFLAGS) -o route route.o $(NLIB) $(RESLIB)
@@ -182,8 +182,8 @@ iptunnel:	$(NET_LIB) iptunnel.o
 ipmaddr:	$(NET_LIB) ipmaddr.o
 		$(CC) $(LDFLAGS) -o ipmaddr ipmaddr.o $(NLIB) $(RESLIB)
 
-mii-tool:	mii-tool.o
-		$(CC) $(LDFLAGS) -o mii-tool mii-tool.o
+mii-tool:	$(NET_LIB) mii-tool.o
+		$(CC) $(LDFLAGS) -o mii-tool mii-tool.o $(NLIB) $(RESLIB)
 
 installbin:
 	@echo
