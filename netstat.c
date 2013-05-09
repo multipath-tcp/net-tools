@@ -1065,7 +1065,7 @@ static int tcp_info(void)
 static void mptcp_do_one(int lnr, const char *line, const char *prot)
 {
 	int d, ipv6, num, local_port, rem_port, state, nsub;
-	unsigned long txq, rxq, local_token, remote_token;
+	unsigned long txq, rxq, local_token, remote_token, inode;
 	char rem_addr[128], local_addr[128];
 	struct aftype *ap;
 #if HAVE_AFINET6
@@ -1081,7 +1081,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 		return;
 
 	num = sscanf(line, "%d: %lX %lX %d %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X "
-			"%X %X %lX:%lX\n", &d, &local_token, &remote_token, 
+			"%X %X %lX:%lX %lu\n", &d, &local_token, &remote_token,
 			&ipv6, local_addr, &local_port, rem_addr, &rem_port, 
 			&state, &nsub, &txq, &rxq);
 
@@ -1131,7 +1131,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 	if (flag_mptcp)
 		 printf(" %-11lu %-12lu", local_token, remote_token);
 
-	finish_this_one(0, 0, NULL);
+	finish_this_one(0, inode, NULL);
 }
 
 static int mptcp_info(void)
