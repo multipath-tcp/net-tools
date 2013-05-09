@@ -1083,7 +1083,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 	num = sscanf(line, "%d: %lX %lX %d %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X "
 			"%X %X %lX:%lX %lu\n", &d, &local_token, &remote_token,
 			&ipv6, local_addr, &local_port, rem_addr, &rem_port, 
-			&state, &nsub, &txq, &rxq);
+			&state, &nsub, &txq, &rxq, &inode);
 
         if (strlen(local_addr) > 8) {
 #if HAVE_AFINET6
