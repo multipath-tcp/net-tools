@@ -194,12 +194,12 @@ installbin:
 	install -m 0755 -d ${BASEDIR}/sbin
 	install -m 0755 -d ${BASEDIR}/bin
 	install -m 0755 arp        ${BASEDIR}/sbin
-	install -m 0755 ifconfig   ${BASEDIR}/bin
+	install -m 0755 ifconfig   ${BASEDIR}/sbin
 	install -m 0755 nameif     ${BASEDIR}/sbin
 	install -m 0755 netstat    ${BASEDIR}/bin
 	install -m 0755 plipconfig $(BASEDIR)/sbin
 	install -m 0755 rarp       ${BASEDIR}/sbin
-	install -m 0755 route      ${BASEDIR}/bin
+	install -m 0755 route      ${BASEDIR}/sbin
 	install -m 0755 slattach   $(BASEDIR)/sbin
 ifeq ($(HAVE_IP_TOOLS),1)
 	install -m 0755 ipmaddr    $(BASEDIR)/sbin
