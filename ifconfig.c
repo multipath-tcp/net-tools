@@ -123,7 +123,7 @@ static int if_print(char *ifname)
 }
 
 /* Set a certain interface flag. */
-static int set_flag(char *ifname, int flag)
+static int set_flag(char *ifname, short flag)
 {
     struct ifreq ifr;
 
@@ -143,7 +143,7 @@ static int set_flag(char *ifname, int flag)
 }
 
 /* Clear a certain interface flag. */
-static int clr_flag(char *ifname, int flag)
+static int clr_flag(char *ifname, short flag)
 {
     struct ifreq ifr;
     int fd;
@@ -175,7 +175,7 @@ static int clr_flag(char *ifname, int flag)
 }
 
 /** test is a specified flag is set */
-static int test_flag(char *ifname, int flags)
+static int test_flag(char *ifname, short flags)
 {
     struct ifreq ifr;
     int fd;
