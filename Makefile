@@ -163,9 +163,6 @@ ifconfig:	$(NET_LIB) ifconfig.o
 nameif:		$(NET_LIB) nameif.o
 		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ nameif.o $(NLIB) $(RESLIB)
 
-hostname:	hostname.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ hostname.o $(DNLIB)
-
 route:		$(NET_LIB) route.o
 		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ route.o $(NLIB) $(RESLIB)
 
@@ -216,21 +213,11 @@ endif
 ifeq ($(HAVE_MII),1)
 	install -m 0755 mii-tool   $(BASEDIR)${SBINDIR}
 endif
-	ln -fs hostname $(BASEDIR)${BINDIR}/dnsdomainname
-	ln -fs hostname $(BASEDIR)${BINDIR}/ypdomainname
-	ln -fs hostname $(BASEDIR)${BINDIR}/nisdomainname
-	ln -fs hostname $(BASEDIR)${BINDIR}/domainname
-ifeq ($(HAVE_AFDECnet),1)
-	ln -fs hostname $(BASEDIR)${BINDIR}/nodename
-endif
 
 savebin:
 	@for i in ${BASEDIR}${SBINDIR}/arp ${BASEDIR}${SBINDIR}/ifconfig \
                  ${BASEDIR}${BINDIR}/netstat \
-		 ${BASEDIR}${SBINDIR}/rarp ${BASEDIR}${SBINDIR}/route \
-		 ${BASEDIR}${BINDIR}/hostname ${BASEDIR}${BINDIR}/ypdomainname \
-                 ${BASEDIR}${BINDIR}/dnsdomainname ${BASEDIR}${BINDIR}/nisdomainname \
-		 ${BASEDIR}${BINDIR}/domainname ; do \
+		 ${BASEDIR}${SBINDIR}/rarp ${BASEDIR}${SBINDIR}/route ; do \
 		 [ -f $$i ] && cp -f $$i $$i.old ; done ; echo Saved.
 
 installdata:
