@@ -201,15 +201,14 @@ void aftrans_def(char *tool, char *argv0, char *dflt)
     char *tmp;
     char *buf;
 
-    strcpy(afname, dflt);
+    safe_strncpy(afname, dflt, sizeof(afname));
 
     if (!(tmp = strrchr(argv0, '/')))
 	tmp = argv0;		/* no slash?! */
     else
 	tmp++;
 
-    if (!(buf = strdup(tmp)))
-	return;
+    buf = xstrdup(tmp);
 
     if (strlen(tool) >= strlen(tmp)) {
 	free(buf);
@@ -227,7 +226,7 @@ void aftrans_def(char *tool, char *argv0, char *dflt)
 
     afname[0] = '\0';
     if (aftrans_opt(buf))
-	strcpy(afname, buf);
+	safe_strncpy(afname, buf, sizeof(afname));
 
     free(buf);
 }
@@ -342,7 +341,7 @@ void print_aflist(int type) {
 	if ((type == 1 && ((*afp)->rprint == NULL)) || ((*afp)->af == 0)) {
 		afp++; continue;
 	}
-	if ((count % 3) == 0) fprintf(stderr,count?"\n    ":"    "); 
+	if ((count % 3) == 0) fprintf(stderr,count?"\n    ":"    ");
         txt = (*afp)->name; if (!txt) txt = "..";
 	fprintf(stderr,"%s (%s) ",txt,(*afp)->title);
 	count++;
