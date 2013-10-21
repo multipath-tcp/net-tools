@@ -18,14 +18,16 @@
 #		Alan Cox <A.Cox@swansea.ac.uk>
 #		Copyright 1993-1994 Swansea University Computer Society
 #
-# Be careful! 
+# Be careful!
 # This Makefile doesn't describe complete dependencies for all include files.
-# If you change include files you might need to do make clean. 
+# If you change include files you might need to do make clean.
 #
 
-# set the base of the Installation 
+# set the base of the Installation
 # BASEDIR = /mnt
 BASEDIR ?= $(DESTDIR)
+BINDIR ?= /bin
+SBINDIR ?= /sbin
 
 # path to the net-lib support library. Default: lib
 NET_LIB_PATH = lib
@@ -53,6 +55,12 @@ ifeq ($(HAVE_AFDECnet),1)
 DNLIB = -ldnet
 endif
 
+ifeq ($(origin CC), undefined)
+CC	= gcc
+endif
+LD	= $(CC)
+PKG_CONFIG ?= pkg-config
+
 # -------- end of user definitions --------
 
 MAINTAINER = net-tools-devel@lists.sourceforge.net
@@ -69,19 +77,16 @@ endif
 NET_LIB = $(NET_LIB_PATH)/lib$(NET_LIB_NAME).a
 
 ifeq ($(HAVE_SELINUX),1)
-LDFLAGS += -lselinux
-CFLAGS += -DHAVE_SELINUX
+SE_PC_CFLAGS := $(shell $(PKG_CONFIG) --cflags libselinux)
+SE_PC_LIBS := $(shell $(PKG_CONFIG) --libs libselinux || echo -lselinux)
+SELIB = $(SE_PC_LIBS)
+CPPFLAGS += $(SE_PC_CFLAGS)
 endif
 
 CPPFLAGS += -I. -I$(TOPDIR)/include -I$(NET_LIB_PATH)
 LDFLAGS  += -L$(NET_LIB_PATH)
 
 SUBDIRS	= man/ $(NET_LIB_PATH)/
-
-ifeq ($(origin CC), undefined)
-CC	= gcc
-endif
-LD	= $(CC)
 
 NLIB	= -l$(NET_LIB_NAME)
 
@@ -126,7 +131,7 @@ distcheck:	dist
 		rm -rf net-tools-$(RELEASE)
 		@printf "\nThe tarball is ready to go:\n%s\n" "`du -b net-tools-$(RELEASE).tar.xz`"
 
-config.h: 	config.in Makefile 
+config.h: 	config.in Makefile
 		@echo "Configuring the Linux net-tools (NET-3 Base Utilities)..." ; echo
 		@if [ config.status -nt config.in ]; \
 			then ./configure.sh config.status; \
@@ -153,37 +158,40 @@ subdirs:	libdir
 		@for i in $(SUBDIRS:$(NET_LIB_PATH)/=); do $(MAKE) -C $$i || exit $$? ; done
 
 ifconfig:	$(NET_LIB) ifconfig.o
-		$(CC) $(LDFLAGS) -o ifconfig ifconfig.o $(NLIB) $(RESLIB)
-		
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ifconfig.o $(NLIB) $(RESLIB)
+
 nameif:		$(NET_LIB) nameif.o
-		$(CC) $(LDFLAGS) -o nameif nameif.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ nameif.o $(NLIB) $(RESLIB)
+
+hostname:	hostname.o
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ hostname.o $(DNLIB)
 
 route:		$(NET_LIB) route.o
-		$(CC) $(LDFLAGS) -o route route.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ route.o $(NLIB) $(RESLIB)
 
 arp:		$(NET_LIB) arp.o
-		$(CC) $(LDFLAGS) -o arp arp.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ arp.o $(NLIB) $(RESLIB)
 
 rarp:		$(NET_LIB) rarp.o
-		$(CC) $(LDFLAGS) -o rarp rarp.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ rarp.o $(NLIB)
 
 slattach:	$(NET_LIB) slattach.o
-		$(CC) $(LDFLAGS) -o slattach slattach.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ slattach.o $(NLIB)
 
 plipconfig:	$(NET_LIB) plipconfig.o
-		$(CC) $(LDFLAGS) -o plipconfig plipconfig.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ plipconfig.o $(NLIB)
 
 netstat:	$(NET_LIB) netstat.o statistics.o
-		$(CC) $(LDFLAGS) -o netstat netstat.o statistics.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ netstat.o statistics.o $(NLIB) $(RESLIB) $(SELIB)
 
 iptunnel:	$(NET_LIB) iptunnel.o
-		$(CC) $(LDFLAGS) -o iptunnel iptunnel.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ iptunnel.o $(NLIB) $(RESLIB)
 
 ipmaddr:	$(NET_LIB) ipmaddr.o
-		$(CC) $(LDFLAGS) -o ipmaddr ipmaddr.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ipmaddr.o $(NLIB) $(RESLIB)
 
 mii-tool:	$(NET_LIB) mii-tool.o
-		$(CC) $(LDFLAGS) -o mii-tool mii-tool.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ mii-tool.o $(NLIB) $(RESLIB)
 
 installbin:
 	@echo
@@ -191,30 +199,38 @@ installbin:
 	@echo "Notice: ifconfig and route are now installed into /bin"
 	@echo "######################################################"
 	@echo
-	install -m 0755 -d ${BASEDIR}/sbin
-	install -m 0755 -d ${BASEDIR}/bin
-	install -m 0755 arp        ${BASEDIR}/sbin
-	install -m 0755 ifconfig   ${BASEDIR}/bin
-	install -m 0755 nameif     ${BASEDIR}/sbin
-	install -m 0755 netstat    ${BASEDIR}/bin
-	install -m 0755 plipconfig $(BASEDIR)/sbin
-	install -m 0755 rarp       ${BASEDIR}/sbin
-	install -m 0755 route      ${BASEDIR}/bin
-	install -m 0755 slattach   $(BASEDIR)/sbin
+	install -m 0755 -d ${BASEDIR}${SBINDIR}
+	install -m 0755 -d ${BASEDIR}${BINDIR}
+	install -m 0755 arp        ${BASEDIR}${SBINDIR}
+	install -m 0755 ifconfig   ${BASEDIR}${BINDIR}
+	install -m 0755 nameif     ${BASEDIR}${SBINDIR}
+	install -m 0755 netstat    ${BASEDIR}${BINDIR}
+	install -m 0755 plipconfig $(BASEDIR)${SBINDIR}
+	install -m 0755 rarp       ${BASEDIR}${SBINDIR}
+	install -m 0755 route      ${BASEDIR}${BINDIR}
+	install -m 0755 slattach   $(BASEDIR)${SBINDIR}
 ifeq ($(HAVE_IP_TOOLS),1)
-	install -m 0755 ipmaddr    $(BASEDIR)/sbin
-	install -m 0755 iptunnel   $(BASEDIR)/sbin
+	install -m 0755 ipmaddr    $(BASEDIR)${SBINDIR}
+	install -m 0755 iptunnel   $(BASEDIR)${SBINDIR}
 endif
 ifeq ($(HAVE_MII),1)
-	install -m 0755 mii-tool   $(BASEDIR)/sbin
+	install -m 0755 mii-tool   $(BASEDIR)${SBINDIR}
+endif
+	ln -fs hostname $(BASEDIR)${BINDIR}/dnsdomainname
+	ln -fs hostname $(BASEDIR)${BINDIR}/ypdomainname
+	ln -fs hostname $(BASEDIR)${BINDIR}/nisdomainname
+	ln -fs hostname $(BASEDIR)${BINDIR}/domainname
+ifeq ($(HAVE_AFDECnet),1)
+	ln -fs hostname $(BASEDIR)${BINDIR}/nodename
 endif
 
 savebin:
-	@for i in ${BASEDIR}/sbin/arp ${BASEDIR}/sbin/ifconfig \
-                 ${BASEDIR}/bin/netstat \
-		 ${BASEDIR}/sbin/rarp ${BASEDIR}/sbin/route \
-                 ${BASEDIR}/bin/dnsdomainname ${BASEDIR}/bin/nisdomainname \
-		 ${BASEDIR}/bin/domainname ; do \
+	@for i in ${BASEDIR}${SBINDIR}/arp ${BASEDIR}${SBINDIR}/ifconfig \
+                 ${BASEDIR}${BINDIR}/netstat \
+		 ${BASEDIR}${SBINDIR}/rarp ${BASEDIR}${SBINDIR}/route \
+		 ${BASEDIR}${BINDIR}/hostname ${BASEDIR}${BINDIR}/ypdomainname \
+                 ${BASEDIR}${BINDIR}/dnsdomainname ${BASEDIR}${BINDIR}/nisdomainname \
+		 ${BASEDIR}${BINDIR}/domainname ; do \
 		 [ -f $$i ] && cp -f $$i $$i.old ; done ; echo Saved.
 
 installdata:

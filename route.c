@@ -10,7 +10,7 @@
  *              (derived from FvK's 'route.c     1.70    01/04/94')
  *
  * Modifications:
- *              Johannes Stille:        for Net-2Debugged by 
+ *              Johannes Stille:        for Net-2Debugged by
  *                                      <johannes@titan.os.open.de>
  *              Linus Torvalds:         Misc Changes
  *              Alan Cox:               add the new mtu/window stuff
@@ -19,7 +19,7 @@
  *       {1.80} Bernd Eckenfels:        reject, metric, irtt, 1.2.x support.
  *       {1.81} Bernd Eckenfels:        reject routes need a dummy device
  *960127 {1.82} Bernd Eckenfels:        'mod' and 'dyn' 'reinstate' added
- *960129 {1.83} Bernd Eckenfels:        resolve and getsock now in lib/, 
+ *960129 {1.83} Bernd Eckenfels:        resolve and getsock now in lib/,
  *                                      REJECT displays '-' as gatway.
  *960202 {1.84} Bernd Eckenfels:        net-features support added
  *960203 {1.85} Bernd Eckenfels:        "#ifdef' in '#if' for net-features
@@ -60,6 +60,7 @@
 #include "intl.h"
 #include "pathnames.h"
 #include "version.h"
+#include "util.h"
 
 #define DFLT_AF "inet"
 
@@ -68,12 +69,12 @@
 
 static char *Release = RELEASE;
 
-int opt_n = 0;			/* numerical output flag        */
-int opt_v = 0;			/* debugging output flag        */
-int opt_e = 1;			/* 1,2,3=type of routetable     */
-int opt_fc = 0;			/* routing cache/FIB */
-int opt_h = 0;			/* help selected                */
-struct aftype *ap;		/* current address family       */
+int opt_n = 0;     // numerical output FLAG_NUM | FLAG_SYM
+int opt_v = 0;     // debugging output flag
+int opt_e = 1;     // 1,2,3=type of routetable
+int opt_fc = 0;    // routing cache/FIB
+int opt_h = 0;     // help selected
+struct aftype *ap; // selected address family
 
 static void usage(void)
 {
@@ -89,7 +90,7 @@ static void usage(void)
     fprintf(stderr, _("        -F, --fib                display Forwarding Information Base (default)\n"));
     fprintf(stderr, _("        -C, --cache              display routing cache instead of FIB\n\n"));
 
-    fprintf(stderr, _("  <AF>=Use '-A <af>' or '--<af>'; default: %s\n"), DFLT_AF);
+    fprintf(stderr, _("  <AF>=Use -4, -6, '-A <af>' or '--<af>'; default: %s\n"), DFLT_AF);
     fprintf(stderr, _("  List of possible address families (which support routing):\n"));
     print_aflist(1); /* 1 = routeable */
     exit(E_USAGE);
@@ -135,10 +136,8 @@ int main(int argc, char **argv)
 
     /* getopts and -net wont work :-/ */
     for (tmp = argv; *tmp; tmp++) {
-	if (!strcmp(*tmp, "-net"))
-	    strcpy(*tmp, "#net");
-	else if (!strcmp(*tmp, "-host"))
-	    strcpy(*tmp, "#host");
+        if (!strcmp(*tmp, "-net") || !strcmp(*tmp, "-host"))
+            (*tmp)[0]='#';
     }
 
     /* Fetch the command-line arguments. */

@@ -44,20 +44,20 @@
 
 extern int h_errno;		/* some netdb.h versions don't export this */
 
-char * fix_v4_address(char *buf, struct in6_addr *in6) 
-{ 
-	if (IN6_IS_ADDR_V4MAPPED(in6->s6_addr)) { 
-			char *s =strchr(buf, '.'); 
-			if (s) { 
+char * fix_v4_address(char *buf, struct in6_addr *in6)
+{
+	if (IN6_IS_ADDR_V4MAPPED(in6->s6_addr)) {
+			char *s =strchr(buf, '.');
+			if (s) {
 				while (s > buf && *s != ':')
 					--s;
-				if (*s == ':') ++s; 	
-				else s = NULL; 
-			} 	
+				if (*s == ':') ++s;
+				else s = NULL;
+			}
 			if (s) return s;
-	} 
-	return buf; 
-} 
+	}
+	return buf;
+}
 
 static int INET6_resolve(char *name, struct sockaddr_in6 *sin6)
 {
@@ -84,10 +84,9 @@ static int INET6_resolve(char *name, struct sockaddr_in6 *sin6)
 #endif
 
 
-static int INET6_rresolve(char *name, struct sockaddr_in6 *sin6, int numeric)
+static int INET6_rresolve(char *name, size_t namelen,
+			  struct sockaddr_in6 *sin6, int numeric)
 {
-    int s;
-
     /* Grmpf. -FvK */
     if (sin6->sin6_family != AF_INET6) {
 #ifdef DEBUG
@@ -98,21 +97,20 @@ static int INET6_rresolve(char *name, struct sockaddr_in6 *sin6, int numeric)
 	return (-1);
     }
     if (numeric & 0x7FFF) {
-	inet_ntop( AF_INET6, &sin6->sin6_addr, name, 80);
+	inet_ntop( AF_INET6, &sin6->sin6_addr, name, namelen);
 	return (0);
     }
     if (IN6_IS_ADDR_UNSPECIFIED(&sin6->sin6_addr)) {
         if (numeric & 0x8000)
-	    strcpy(name, "default");
+	    safe_strncpy(name, "default", namelen);
 	else
-	    strcpy(name, "[::]");
+	    safe_strncpy(name, "[::]", namelen);
 	return (0);
     }
 
-    if ((s = getnameinfo((struct sockaddr *) sin6, sizeof(struct sockaddr_in6),
-			 name, 255 /* !! */ , NULL, 0, 0))) {
-	fputs("getnameinfo failed\n", stderr);
-	return -1;
+    if (getnameinfo((struct sockaddr *) sin6, sizeof(struct sockaddr_in6),
+		    name, namelen , NULL, 0, 0)) {
+	inet_ntop( AF_INET6, &sin6->sin6_addr, name, namelen);
     }
     return (0);
 }
@@ -143,7 +141,8 @@ static const char *INET6_sprint(struct sockaddr *sap, int numeric)
 
     if (sap->sa_family == 0xFFFF || sap->sa_family == 0)
 	return safe_strncpy(buff, _("[NONE SET]"), sizeof(buff));
-    if (INET6_rresolve(buff, (struct sockaddr_in6 *) sap, numeric) != 0)
+    if (INET6_rresolve(buff, sizeof(buff),
+		       (struct sockaddr_in6 *) sap, numeric) != 0)
 	return safe_strncpy(buff, _("[UNKNOWN]"), sizeof(buff));
     return (fix_v4_address(buff, &((struct sockaddr_in6 *)sap)->sin6_addr));
 }
@@ -163,8 +162,8 @@ static int INET6_getsock(char *bufp, struct sockaddr *sap)
     if (inet_pton(AF_INET6, bufp, sin6->sin6_addr.s6_addr) <= 0)
 	return (-1);
     p = fix_v4_address(bufp, &sin6->sin6_addr);
-    if (p != bufp) 
-        memcpy(bufp, p, strlen(p)+1); 
+    if (p != bufp)
+        memcpy(bufp, p, strlen(p)+1);
     return 16;			/* ?;) */
 }
 
