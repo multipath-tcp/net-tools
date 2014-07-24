@@ -1681,7 +1681,7 @@ static int ipx_info(void)
 	/* eat line */;
 
     while (fgets(buf, 255, f) != NULL) {
-	sscanf(buf, "%s %s %lX %lX %d %d",
+	sscanf(buf, "%s %s %lX %lX %u %u",
 	       sad, dad, &txq, &rxq, &state, &uid);
 	if ((st = rindex(sad, ':'))) {
 	    *st++ = '\0';
@@ -1699,7 +1699,7 @@ static int ipx_info(void)
 		sscanf(st, "%X", &dport);	/* net byt order */
 		dport = ntohs(dport);
 	    } else {
-		EINTERN("netstat.c", "ipx soket format error in destination port");
+		EINTERN("netstat.c", "ipx socket format error in destination port");
 		fclose(f);
 		return (-1);
 	    }
@@ -1926,8 +1926,8 @@ static void usage(void)
     fprintf(stderr, _("        -Z, --context            display SELinux security context for sockets\n"));
 #endif
 
-    fprintf(stderr, _("\n  <Socket>={-t|--tcp} {-m|--mptcp} {-u|--udp} {-U|--udplite} {-w|--raw} {-x|--unix}\n"));
-    fprintf(stderr, _("           --ax25 --ipx --netrom\n"));
+    fprintf(stderr, _("\n  <Socket>={-t|--tcp} {-m|--mptcp} {-u|--udp} {-U|--udplite} {-S|--sctp} {-w|--raw}\n"));
+    fprintf(stderr, _("           {-x|--unix} --ax25 --ipx --netrom\n"));
     fprintf(stderr, _("  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: %s\n"), DFLT_AF);
     fprintf(stderr, _("  List of possible address families (which support routing):\n"));
     print_aflist(1); /* 1 = routeable */
