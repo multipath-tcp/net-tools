@@ -1080,11 +1080,18 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 
 	if (lnr == 0)
 		return;
-
+	
 	num = sscanf(line, "%d: %lX %lX %d %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X "
 			"%X %X %lX:%lX %lu\n", &d, &local_token, &remote_token,
 			&ipv6, local_addr, &local_port, rem_addr, &rem_port, 
 			&state, &nsub, &txq, &rxq, &inode);
+			
+	// user should never see tokens of MPTCP connections from other users
+	if (geteuid()!=0) {
+		local_token=-1;
+		remote_toke=-1;
+	}
+	
 
         if (strlen(local_addr) > 8) {
 #if HAVE_AFINET6
