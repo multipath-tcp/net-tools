@@ -231,7 +231,7 @@ static int INET_rresolve(char *name, size_t len, struct sockaddr_in *sin,
 }
 
 
-static void INET_reserror(char *text)
+static void INET_reserror(const char *text)
 {
     herror(text);
 }
@@ -240,12 +240,16 @@ static void INET_reserror(char *text)
 /* Display an Internet socket address. */
 static const char *INET_print(const char *ptr)
 {
-    return (inet_ntoa((*(struct in_addr *) ptr)));
+    static char name[INET_ADDRSTRLEN + 1];
+    socklen_t len = sizeof(name) - 1;
+    name[len] = '\0';
+    inet_ntop(AF_INET, ptr, name, len);
+    return name;
 }
 
 
 /* Display an Internet socket address. */
-static const char *INET_sprint(struct sockaddr *sap, int numeric)
+static const char *INET_sprint(const struct sockaddr *sap, int numeric)
 {
     static char buff[128];
 

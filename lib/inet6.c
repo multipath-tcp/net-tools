@@ -44,7 +44,7 @@
 
 extern int h_errno;		/* some netdb.h versions don't export this */
 
-char * fix_v4_address(char *buf, struct in6_addr *in6)
+static char *fix_v4_address(char *buf, const struct in6_addr *in6)
 {
 	if (IN6_IS_ADDR_V4MAPPED(in6->s6_addr)) {
 			char *s =strchr(buf, '.');
@@ -116,7 +116,7 @@ static int INET6_rresolve(char *name, size_t namelen,
 }
 
 
-static void INET6_reserror(char *text)
+static void INET6_reserror(const char *text)
 {
     herror(text);
 }
@@ -126,16 +126,17 @@ static void INET6_reserror(char *text)
 /* Display an Internet socket address. */
 static const char *INET6_print(const char *ptr)
 {
-    static char name[80];
-
-    inet_ntop(AF_INET6, (struct in6_addr *) ptr, name, 80);
-	return fix_v4_address(name, (struct in6_addr *)ptr);
+    static char name[INET6_ADDRSTRLEN + 1];
+    socklen_t len = sizeof(name) - 1;
+    name[len] = '\0';
+    inet_ntop(AF_INET6, ptr, name, len);
+    return fix_v4_address(name, (struct in6_addr *)ptr);
 }
 
 
 /* Display an Internet socket address. */
 /* dirty! struct sockaddr usually doesn't suffer for inet6 addresses, fst. */
-static const char *INET6_sprint(struct sockaddr *sap, int numeric)
+static const char *INET6_sprint(const struct sockaddr *sap, int numeric)
 {
     static char buff[128];
 

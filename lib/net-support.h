@@ -34,14 +34,14 @@
 
 /* This structure defines protocol families and their handlers. */
 struct aftype {
-    char *name;
-    char *title;
+    const char *name;
+    const char *title;
     int af;
     int alen;
     const char *(*print) (const char *);
-    const char *(*sprint) (struct sockaddr *, int numeric);
+    const char *(*sprint) (const struct sockaddr *, int numeric);
     int (*input) (int type, char *bufp, struct sockaddr *);
-    void (*herror) (char *text);
+    void (*herror) (const char *text);
     int (*rprint) (int options);
     int (*rinput) (int typ, int ext, char **argv);
 
@@ -49,15 +49,15 @@ struct aftype {
     int (*getmask) (char *src, struct sockaddr *mask, char *name);
 
     int fd;
-    char *flag_file;
+    const char *flag_file;
 };
 
-extern struct aftype *aftypes[];
+extern struct aftype * const aftypes[];
 
 /* This structure defines hardware protocols and their handlers. */
 struct hwtype {
-    char *name;
-    char *title;
+    const char *name;
+    const char *title;
     int type;
     int alen;
     const char *(*print) (const char *);
@@ -67,13 +67,13 @@ struct hwtype {
 };
 
 
-extern struct hwtype *get_hwtype(const char *name);
-extern struct hwtype *get_hwntype(int type);
+extern const struct hwtype *get_hwtype(const char *name);
+extern const struct hwtype *get_hwntype(int type);
 extern void          print_hwlist(int type);
-extern struct aftype *get_aftype(const char *name);
-extern struct aftype *get_afntype(int type);
+extern const struct aftype *get_aftype(const char *name);
+extern const struct aftype *get_afntype(int type);
 extern void          print_aflist(int type);
-extern int           hw_null_address(struct hwtype *hw, void *addr);
+extern int           hw_null_address(const struct hwtype *hw, void *addr);
 
 extern int getargs(char *string, char *arguments[]);
 

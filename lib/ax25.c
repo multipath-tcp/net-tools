@@ -67,7 +67,7 @@ static const char *AX25_print(const char *ptr)
 
 /* Display an AX.25 socket address. */
 static const char *
- AX25_sprint(struct sockaddr *sap, int numeric)
+ AX25_sprint(const struct sockaddr *sap, int numeric)
 {
     static char buf[64];
 
@@ -143,7 +143,7 @@ static int AX25_input(int type, char *bufp, struct sockaddr *sap)
 
 
 /* Display an error message. */
-static void AX25_herror(char *text)
+static void AX25_herror(const char *text)
 {
     if (text == NULL)
 	fprintf(stderr, "%s\n", AX25_errmsg);

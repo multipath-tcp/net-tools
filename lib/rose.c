@@ -66,7 +66,7 @@ static const char *
 
 /* Display a ROSE socket address. */
 static const char *
- ROSE_sprint(struct sockaddr *sap, int numeric)
+ ROSE_sprint(const struct sockaddr *sap, int numeric)
 {
     if (sap->sa_family == 0xFFFF || sap->sa_family == 0)
 	return _("[NONE SET]");
@@ -100,7 +100,7 @@ static int ROSE_input(int type, char *bufp, struct sockaddr *sap)
 
 
 /* Display an error message. */
-static void ROSE_herror(char *text)
+static void ROSE_herror(const char *text)
 {
     if (text == NULL)
 	fprintf(stderr, "%s\n", ROSE_errmsg);
