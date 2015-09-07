@@ -1174,7 +1174,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 	int d, ipv6, num, local_port, rem_port, state, nsub;
 	unsigned long txq, rxq, local_token, remote_token, inode;
 	char rem_addr[128], local_addr[128];
-	struct aftype *ap;
+	const struct aftype *ap;
 #if HAVE_AFINET6
 	struct sockaddr_in6 localaddr, remaddr;
 	char addr6[INET6_ADDRSTRLEN];
