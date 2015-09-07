@@ -13,7 +13,7 @@
 #include "intl.h"
 #include "proc.h"
 
-static int print_static,f_raw,f_tcp,f_udp,f_sctp,f_unknown = 1;
+static int print_static,f_raw,f_tcp,f_udp,f_sctp,f_mptcp,f_unknown = 1;
 
 enum State {
     number = 0, opt_number, i_forward, i_inp_icmp, i_outp_icmp, i_rto_alg,
@@ -295,6 +295,50 @@ static const struct entry Sctptab[] =
     {"SctpShutdowns", N_("%llu Number of Graceful Terminations"), number},
 };
 
+static const struct entry Mptcptab[] =
+{   /* Keep the entries sorted! */
+    {"AddAddrRx", N_("%llu ADD_ADDR received "), opt_number},
+    {"AddAddrTx", N_("%llu ADD_ADDR sent "), opt_number},
+    {"DSSNotMatching", N_("%llu DSS-options received which did not match the previous one "), opt_number},
+    {"DSSNoMatchTCP", N_("%llu DSS-mappings did not match the TCP seq numbers "), opt_number},
+    {"DSSPurgeOldSubSegs", N_("%llu segments got removed due to missing mapping "), opt_number},
+    {"DSSSplitTail", N_("%llu segments got split at the tail "), opt_number},
+    {"DSSTrimHead", N_("%llu segments got trimmed at the head due to missing mapping "), opt_number},
+    {"InfiniteMapRx", N_("%llu infinite mappings received "), opt_number},
+    {"MPCapableACKRX", N_("%llu ACK+MP_CAPABLE received "), number},
+    {"MPCapableFallbackACK", N_("%llu fallbacks due to SYN without MP_CAPABLE "), opt_number},
+    {"MPCapableFallbackSYNACK", N_("%llu SYN/ACK did not contain a MP_CAPABLE "), opt_number},
+    {"MPCapableRetransFallback", N_("%llu times we stopped sending SYN+MP_CAPABLE "), opt_number},
+    {"MPCapableSYNACKRX", N_("%llu SYN/ACK+MP_CAPABLE received "), number},
+    {"MPCapableSYNRX", N_("%llu SYN+MP_CAPABLE received "), number},
+    {"MPCapableSYNTX", N_("%llu SYN+MP_CAPABLE sent "), number},
+    {"MPCsumFail", N_("%llu times we received an incorrect checksum "), opt_number},
+    {"MPFailRX", N_("%llu MP_FAIL received "), opt_number},
+    {"MPFallbackAckInit", N_("%llu initial subflows fell back upon reception of an ACK "), opt_number},
+    {"MPFallbackAckSub", N_("%llu subflows (except initial) fell back upon reception of an ACK "), opt_number},
+    {"MPFallbackDataSub", N_("%llu subflows (except initial) fell back upon reception of data "), opt_number},
+    {"MPFallbackDataInit", N_("%llu initial subflows fell back upon reception of data "), opt_number},
+    {"MPFastcloseRX", N_("%llu MP_FAST_CLOSE received "), opt_number},
+    {"MPFastcloseTX", N_("%llu MP_FAST_CLOSE sent "), opt_number},
+    {"MPJoinAckHMacFailure", N_("%llu ACK+MP_JOIN with incorrect HMAC "), opt_number},
+    {"MPJoinAckMissing", N_("%llu subflows where third ACK did not have MP_JOIN "), opt_number},
+    {"MPJoinAckRexmit", N_("%llu ACK+MP_JOIN retransmitted "), opt_number},
+    {"MPJoinAckRTO", N_("%llu subflows whose ACK+MP_JOIN timer timed out "), opt_number},
+    {"MPJoinAckRx", N_("%llu ACK+MP_JOIN received "), number},
+    {"MPJoinAlreadyFallenback", N_("%llu SYN+MP_JOIN received while connection already fell back to TCP "), opt_number},
+    {"MPJoinNoTokenFound", N_("%llu SYN+MP_JOIN received without a matching token "), opt_number},
+    {"MPJoinSynAckHMacFailure", N_("%llu SYN/ACK+MP_JOIN with incorrect HMAC "), opt_number},
+    {"MPJoinSynAckRx", N_("%llu SYN/ACK+MP_JOIN received "), number},
+    {"MPJoinSynRx", N_("%llu SYN+MP_JOIN received "), number},
+    {"MPJoinSynTx", N_("%llu SYN+MP_JOIN sent "), number},
+    {"MPRemoveAddrSubDelete", N_("%llu subflows removed upon reception of REMOVE_ADDR "), opt_number},
+    {"MPTCPCsumEnabled", N_("%llu MPTCP-connections with DSS-checksum "), number},
+    {"MPTCPRetrans", N_("%llu segments retransmitted at the MPTCP-level "), opt_number},
+    {"NoDSSInWindow", N_("%llu times we received more than 64K without a DSS-option "), opt_number},
+    {"RemAddrRx", N_("%llu REMOVE_ADDR received "), opt_number},
+    {"RemAddrTx", N_("%llu REMOVE_ADDR sent "), opt_number},
+};
+
 struct tabtab {
     const char *title;
     const struct entry *tab;
@@ -309,6 +353,7 @@ static const struct tabtab snmptabs[] =
     {"Tcp", Tcptab, sizeof(Tcptab), &f_tcp},
     {"Udp", Udptab, sizeof(Udptab), &f_udp},
     {"Sctp", Sctptab, sizeof(Sctptab), &f_sctp},
+    {"Mptcp", Mptcptab, sizeof(Mptcptab), &f_mptcp},
     {"TcpExt", Tcpexttab, sizeof(Tcpexttab), &f_tcp},
     {NULL}
 };
@@ -503,13 +548,16 @@ static void process6_fd(FILE *f)
 }
 
 /* Process a file with name-value lines (like /proc/net/sctp/snmp) */
-static void process_fd2(FILE *f, const char *filename)
+static void process_fd2(FILE *f, const char *filename, int sctp)
 {
     char buf1[1024];
     char *sp;
     const struct tabtab *tab;
 
-    tab = newtable(snmptabs, "Sctp");
+    if (sctp)
+        tab = newtable(snmptabs, "Sctp");
+    else
+        tab = newtable(snmptabs, "Mptcp");
 
     while (fgets(buf1, sizeof buf1, f)) {
 	sp = buf1 + strcspn(buf1, " \t\n");
@@ -527,11 +575,11 @@ static void process_fd2(FILE *f, const char *filename)
     }
 }
 
-void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp)
+void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp, int flag_mptcp)
 {
     FILE *f;
 
-    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp; f_sctp = flag_sctp;
+    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp; f_sctp = flag_sctp; f_mptcp = flag_mptcp;
 
     f = proc_fopen("/proc/net/snmp");
     if (!f) {
@@ -561,19 +609,28 @@ void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp)
 
     f = proc_fopen("/proc/net/sctp/snmp");
     if (f) {
-	process_fd2(f,"/proc/net/sctp/snmp");
+	process_fd2(f,"/proc/net/sctp/snmp", 1);
 	if (ferror(f)) {
 	    perror("/proc/net/sctp/snmp");
 	    fclose(f);
 	}
     }
+
+    f = proc_fopen("/proc/net/mptcp_net/snmp");
+    if (f) {
+	process_fd2(f,"/proc/net/mptcp_net/snmp", 0);
+	if (ferror(f)) {
+	    perror("/proc/net/mptcp_net/snmp");
+	    fclose(f);
+	}
+    }
 }
 
-void parsesnmp6(int flag_raw, int flag_tcp, int flag_udp)
+void parsesnmp6(int flag_raw, int flag_tcp, int flag_udp, int flag_mptcp)
 {
     FILE *f;
 
-    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp;
+    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp; f_mptcp = flag_mptcp;
 
     f = fopen("/proc/net/snmp6", "r");
     if (!f) {
@@ -591,8 +648,21 @@ void parsesnmp6(int flag_raw, int flag_tcp, int flag_udp)
         return;
     }
     process_fd(f, 0, "Tcp");
-    if (ferror(f))
+    if (ferror(f)) {
         perror("/proc/net/snmp");
+	fclose(f);
+	return;
+    }
+    fclose(f);
+
+    f = proc_fopen("/proc/net/mptcp_net/snmp");
+    if (f) {
+	process_fd2(f,"/proc/net/mptcp_net/snmp", 0);
+	if (ferror(f)) {
+	    perror("/proc/net/mptcp_net/snmp");
+	    fclose(f);
+	}
+    }
 
     fclose(f);
 }
