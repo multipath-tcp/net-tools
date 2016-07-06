@@ -77,7 +77,7 @@ extern struct hwtype ib_hwtype;
 
 extern struct hwtype eui64_hwtype;
 
-static struct hwtype *hwtypes[] =
+static const struct hwtype * const hwtypes[] =
 {
 
     &loop_hwtype,
@@ -160,7 +160,7 @@ static struct hwtype *hwtypes[] =
 
 static short sVhwinit = 0;
 
-void hwinit()
+static void hwinit(void)
 {
     loop_hwtype.title = _("Local Loopback");
     unspec_hwtype.title = _("UNSPEC");
@@ -237,9 +237,9 @@ void hwinit()
 }
 
 /* Check our hardware type table for this type. */
-struct hwtype *get_hwtype(const char *name)
+const struct hwtype *get_hwtype(const char *name)
 {
-    struct hwtype **hwp;
+    const struct hwtype * const *hwp;
 
     if (!sVhwinit)
 	hwinit();
@@ -255,9 +255,9 @@ struct hwtype *get_hwtype(const char *name)
 
 
 /* Check our hardware type table for this type. */
-struct hwtype *get_hwntype(int type)
+const struct hwtype *get_hwntype(int type)
 {
-    struct hwtype **hwp;
+    const struct hwtype * const *hwp;
 
     if (!sVhwinit)
 	hwinit();
@@ -274,8 +274,8 @@ struct hwtype *get_hwntype(int type)
 /* type: 0=all, 1=ARPable */
 void print_hwlist(int type) {
     int count = 0;
-    char * txt;
-    struct hwtype **hwp;
+    const char * txt;
+    const struct hwtype * const *hwp;
 
     if (!sVhwinit)
 	hwinit();
@@ -295,7 +295,7 @@ void print_hwlist(int type) {
 }
 
 /* return 1 if address is all zeros */
-int hw_null_address(struct hwtype *hw, void *ap)
+int hw_null_address(const struct hwtype *hw, void *ap)
 {
     unsigned int i;
     unsigned char *address = (unsigned char *)ap;

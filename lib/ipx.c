@@ -73,8 +73,9 @@ static const char *IPX_print(const char *ptr)
 
 
 /* Display a ipx domain address. */
-static const char *IPX_sprint(struct sockaddr *sap, int numeric)
+static const char *IPX_sprint(const struct sockaddr_storage *sasp, int numeric)
 {
+    const struct sockaddr *sap = (const struct sockaddr *)sasp;
     static char buf[64];
 
     if (sap->sa_family != AF_IPX)
@@ -83,11 +84,11 @@ static const char *IPX_sprint(struct sockaddr *sap, int numeric)
 }
 
 
-static int IPX_getsock(char *bufp, struct sockaddr *sap)
+static int IPX_getsock(char *bufp, struct sockaddr_storage *sasp)
 {
     char *sp = bufp, *bp;
     unsigned int i;
-    struct sockaddr_ipx *sipx = (struct sockaddr_ipx *) sap;
+    struct sockaddr_ipx *sipx = (struct sockaddr_ipx *) sasp;
 
     sipx->sipx_port = 0;
 
@@ -124,12 +125,11 @@ static int IPX_getsock(char *bufp, struct sockaddr *sap)
 
 /* XXX define type which makes verbose format checks AF_input */
 
-static int IPX_input(int type, char *bufp, struct sockaddr *sap)
+static int IPX_input(int type, char *bufp, struct sockaddr_storage *sasp)
 {
-    struct sockaddr_ipx *sai = (struct sockaddr_ipx *) sap;
+    struct sockaddr_ipx *sai = (struct sockaddr_ipx *) sasp;
     unsigned long netnum;
     char *ep;
-    int nbo;
 
     if (!sai)
     	return (-1);
@@ -140,20 +140,12 @@ static int IPX_input(int type, char *bufp, struct sockaddr *sap)
 	sai->sipx_node[3] = sai->sipx_node[4] = sai->sipx_node[5] = '\0';
     sai->sipx_port = 0;
 
-    if (type & 4)
-	nbo = 1;
-    else
-	nbo = 0;
-
     type &= 3;
     if (type <= 1) {
 	netnum = strtoul(bufp, &ep, 16);
 	if ((netnum == 0xffffffffL) || (netnum == 0L))
 	    return (-1);
-	if (nbo)
-	    sai->sipx_network = netnum;
-	else
-	    sai->sipx_network = htonl(netnum);
+	sai->sipx_network = htonl(netnum);
     }
     if (type == 1) {
 	if (*ep != '\0')
@@ -165,7 +157,7 @@ static int IPX_input(int type, char *bufp, struct sockaddr *sap)
 	    return (-3);
 	bufp = ep + 1;
     }
-    return (IPX_getsock(bufp, sap));
+    return IPX_getsock(bufp, sasp);
 }
 
 

@@ -23,9 +23,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#ifndef __GLIBC__
-#include <netinet6/ipv6_route.h>	/* glibc doesn't have this */
-#endif
 #include "version.h"
 #include "net-support.h"
 #include "pathnames.h"
@@ -61,7 +58,7 @@ int rprint_fib6(int ext, int numeric)
 {
     char buff[4096], iface[16], flags[16];
     char addr6[128], naddr6[128];
-    struct sockaddr_in6 saddr6, snaddr6;
+    struct sockaddr_storage sas, sasn;
     int num, iflags, metric, refcnt, use, prefix_len, slen;
     FILE *fp = fopen(_PATH_PROCNET_ROUTE6, "r");
 
@@ -107,18 +104,18 @@ int rprint_fib6(int ext, int numeric)
 	snprintf(addr6, sizeof(addr6), "%s:%s:%s:%s:%s:%s:%s:%s",
 		 addr6p[0], addr6p[1], addr6p[2], addr6p[3],
 		 addr6p[4], addr6p[5], addr6p[6], addr6p[7]);
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &saddr6);
+	inet6_aftype.input(1, addr6, &sas);
 	snprintf(addr6, sizeof(addr6), "%s/%d",
-		 inet6_aftype.sprint((struct sockaddr *) &saddr6, numeric),
+		 inet6_aftype.sprint(&sas, numeric),
 		 prefix_len);
 
 	/* Fetch and resolve the nexthop address. */
 	snprintf(naddr6, sizeof(naddr6), "%s:%s:%s:%s:%s:%s:%s:%s",
 		 naddr6p[0], naddr6p[1], naddr6p[2], naddr6p[3],
 		 naddr6p[4], naddr6p[5], naddr6p[6], naddr6p[7]);
-	inet6_aftype.input(1, naddr6, (struct sockaddr *) &snaddr6);
+	inet6_aftype.input(1, naddr6, &sasn);
 	snprintf(naddr6, sizeof(naddr6), "%s",
-		 inet6_aftype.sprint((struct sockaddr *) &snaddr6, numeric));
+		 inet6_aftype.sprint(&sasn, numeric));
 
 	/* Decode the flags. */
 
@@ -161,10 +158,11 @@ int rprint_cache6(int ext, int numeric)
 {
     char buff[4096], iface[16], flags[16];
     char addr6[128], haddr[20], statestr[20];
-    struct sockaddr_in6 saddr6;
+    struct sockaddr_storage sas;
     int type, refcnt, prefix_len, location, state, gc;
     long tstamp, expire, ndflags, reachable, stale, delete;
     FILE *fp = fopen(_PATH_PROCNET_NDISC, "r");
+    long clk_tck = ticks_per_second();
     char addr6p[8][5], haddrp[6][3];
 
     if (!fp) {
@@ -194,9 +192,9 @@ int rprint_cache6(int ext, int numeric)
 	snprintf(addr6, sizeof(addr6), "%s:%s:%s:%s:%s:%s:%s:%s",
 		 addr6p[0], addr6p[1], addr6p[2], addr6p[3],
 		 addr6p[4], addr6p[5], addr6p[6], addr6p[7]);
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &saddr6);
+	inet6_aftype.input(1, addr6, &sas);
 	snprintf(addr6, sizeof(addr6), "%s/%d",
-	       inet6_aftype.sprint((struct sockaddr *) &saddr6, numeric),
+	       inet6_aftype.sprint(&sas, numeric),
 		 prefix_len);
 
 	/* Fetch the  hardware address. */
@@ -257,11 +255,11 @@ int rprint_cache6(int ext, int numeric)
 	    stale = reachable > tstamp ? reachable - tstamp : 0;
 	delete = gc > tstamp ? gc - tstamp : 0;
 	if (ext != 2) {
-	    printf(" %-9ld ", stale / HZ);
+	    printf(" %-9ld ", stale / clk_tck);
 	    if (refcnt)
 		printf(" * ");
 	    else
-		printf(" %-7ld ", delete / HZ);
+		printf(" %-7ld ", delete / clk_tck);
 	}
 	printf("\n");
     }
