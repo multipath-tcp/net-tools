@@ -14,7 +14,7 @@
 #define _PATH_PROCNET_IGMP6		"/proc/net/igmp6"
 #define _PATH_PROCNET_TCP		"/proc/net/tcp"
 #define _PATH_PROCNET_TCP6		"/proc/net/tcp6"
-#define _PATH_PROCNET_MPTCP		"/proc/net/mptcp_net"
+#define _PATH_PROCNET_MPTCP		"/proc/net/mptcp_net/mptcp"
 #define _PATH_PROCNET_UDP		"/proc/net/udp"
 #define _PATH_PROCNET_UDP6		"/proc/net/udp6"
 #define _PATH_PROCNET_UDPLITE           "/proc/net/udplite"
