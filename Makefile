@@ -250,7 +250,10 @@ endif
 savebin:
 	@for i in ${BASEDIR}${SBINDIR}/arp ${BASEDIR}${SBINDIR}/ifconfig \
                  ${BASEDIR}${BINDIR}/netstat \
-		 ${BASEDIR}${SBINDIR}/rarp ${BASEDIR}${SBINDIR}/route ; do \
+		 ${BASEDIR}${SBINDIR}/rarp ${BASEDIR}${SBINDIR}/route \
+		 ${BASEDIR}${BINDIR}/hostname ${BASEDIR}${BINDIR}/ypdomainname \
+                 ${BASEDIR}${BINDIR}/dnsdomainname ${BASEDIR}${BINDIR}/nisdomainname \
+		 ${BASEDIR}${BINDIR}/domainname ; do \
 		 [ -f $$i ] && cp -f $$i $$i.old ; done ; echo Saved.
 
 installdata:
