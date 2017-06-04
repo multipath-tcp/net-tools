@@ -49,13 +49,16 @@
 #define _PATH_PROCNET_DEV		"/proc/net/dev"
 #define _PATH_PROCNET_RARP		"/proc/net/rarp"
 #define _PATH_ETHERS			"/etc/ethers"
+#define _PATH_PROCNET_ROSE		"/proc/net/rose"
+#define _PATH_PROCNET_ROSE_NEIGH	"/proc/net/rose_neigh"
+#define _PATH_PROCNET_ROSE_NODES	"/proc/net/rose_nodes"
 #define _PATH_PROCNET_ROSE_ROUTE	"/proc/net/rose_routes"
 #define _PATH_PROCNET_X25		"/proc/net/x25"
 #define _PATH_PROCNET_X25_ROUTE		"/proc/net/x25/route"
 #define _PATH_PROCNET_DEV_MCAST		"/proc/net/dev_mcast"
 #define _PATH_PROCNET_ATALK_ROUTE	"/proc/net/atalk_route"
-#define _PATH_SYS_BLUETOOTH_L2CAP	"/sys/class/bluetooth/l2cap"
-#define _PATH_SYS_BLUETOOTH_RFCOMM	"/sys/class/bluetooth/rfcomm"
+#define _PATH_SYS_BLUETOOTH_L2CAP	"/sys/kernel/debug/bluetooth/l2cap"
+#define _PATH_SYS_BLUETOOTH_RFCOMM	"/sys/kernel/debug/bluetooth/rfcomm"
 
 /* pathname for the netlink device */
 #define _PATH_DEV_ROUTE	"/dev/route"

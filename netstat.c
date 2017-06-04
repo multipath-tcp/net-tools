@@ -115,10 +115,8 @@
 #endif
 
 /* prototypes for statistics.c */
-void parsesnmp(int, int, int);
-void inittab(void);
+void parsesnmp(int, int, int, int);
 void parsesnmp6(int, int, int);
-void inittab6(void);
 
 typedef enum {
     SS_FREE = 0,		/* not allocated                */
@@ -167,6 +165,7 @@ int flag_exp = 1;
 int flag_wide= 0;
 int flag_prg = 0;
 int flag_arg = 0;
+int flag_noprot = 0;
 int flag_ver = 0;
 int flag_l2cap = 0;
 int flag_rfcomm = 0;
@@ -177,13 +176,13 @@ FILE *procinfo;
 #define INFO_GUTS1(file,name,proc,prot)			\
   procinfo = proc_fopen((file));			\
   if (procinfo == NULL) {				\
-    if (errno != ENOENT) {				\
+    if (errno != ENOENT && errno != EACCES) {		\
       perror((file));					\
       return -1;					\
     }							\
-    if (flag_arg || flag_ver)				\
+    if (!flag_noprot && (flag_arg || flag_ver))		\
       ESYSNOT("netstat", (name));			\
-    if (flag_arg)					\
+    if (!flag_noprot && flag_arg)			\
       rc = 1;						\
   } else {						\
     do {						\
@@ -557,6 +556,55 @@ static int netrom_info(void)
 }
 #endif
 
+#if HAVE_AFROSE
+static const char * const rose_state[] =
+{
+    N_("LISTENING"),
+    N_("CONN SENT"),
+    N_("DISC SENT"),
+    N_("ESTABLISHED"),
+};
+
+static int rose_info(void)
+{
+    FILE *f;
+    char buffer[256], dev[6];
+    int ret, st, lci, neigh;
+    char src_addr[10], src_call[9], dest_addr[10], dest_call[9];
+
+    f = fopen(_PATH_PROCNET_ROSE, "r");
+    if (f == NULL) {
+	if (errno != ENOENT) {
+	    perror(_PATH_PROCNET_ROSE);
+	    return (-1);
+	}
+	if (flag_arg || flag_ver)
+	    ESYSNOT("netstat", "AF ROSE");
+	if (flag_arg)
+	    return (1);
+	else
+	    return (0);
+    }
+    printf(_("Active ROSE sockets\n"));
+    printf(_("dest_addr   dest_call  src_addr    src_call  dev   lci neigh   state\n"));
+    if (fgets(buffer, 256, f))
+	/* eat line */;
+
+    while (fgets(buffer, 256, f)) {
+	ret = sscanf(buffer, "%s %s %s %s %s %d %d %d",
+		dest_addr, dest_call, src_addr, src_call, dev, &lci, &neigh, &st);
+	if (ret != 8) {
+	    printf(_("Problem reading data from %s\n"), _PATH_PROCNET_ROSE);
+	    continue;
+	}
+	printf("%-10s  %-9s  %-10s  %-9s %-5s %3d %5d   %s\n",
+		dest_addr, dest_call, src_addr, src_call, dev, lci, neigh, _(rose_state[st]));
+    }
+    fclose(f);
+    return 0;
+}
+#endif
+
 /* These enums are used by IPX too. :-( */
 enum {
     TCP_ESTABLISHED = 1,
@@ -614,15 +662,14 @@ static void finish_this_one(int uid, unsigned long inode, const char *timers)
 static void igmp_do_one(int lnr, const char *line,const char *prot)
 {
     char mcast_addr[128];
+    struct sockaddr_storage sas;
+    struct sockaddr_in *sin = (struct sockaddr_in *)&sas;
 #if HAVE_AFINET6
-    struct sockaddr_in6 mcastaddr;
     char addr6[INET6_ADDRSTRLEN];
     struct in6_addr in6;
     extern struct aftype inet6_aftype;
-#else
-    struct sockaddr_in mcastaddr;
 #endif
-    struct aftype *ap;
+    const struct aftype *ap;
     static int idx_flag = 0;
     static int igmp6_flag = 0;
     static char device[16];
@@ -658,20 +705,20 @@ static void igmp_do_one(int lnr, const char *line,const char *prot)
 	    in6.s6_addr32[2] = htonl(in6.s6_addr32[2]);
 	    in6.s6_addr32[3] = htonl(in6.s6_addr32[3]);
         inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	    inet6_aftype.input(1, addr6, (struct sockaddr *) &mcastaddr);
-	    mcastaddr.sin6_family = AF_INET6;
+	    inet6_aftype.input(1, addr6, &sas);
+	    sas.ss_family = AF_INET6;
 	} else {
 	    fprintf(stderr, _("warning, got bogus igmp6 line %d.\n"), lnr);
 	    return;
 	}
 
-	if ((ap = get_afntype(((struct sockaddr *) &mcastaddr)->sa_family)) == NULL) {
+	if ((ap = get_afntype(sas.ss_family)) == NULL) {
 	    fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-		    ((struct sockaddr *) &mcastaddr)->sa_family);
+		    sas.ss_family);
 	    return;
 	}
-	safe_strncpy(mcast_addr, ap->sprint((struct sockaddr *) &mcastaddr,
-				      flag_not & FLAG_NUM_HOST), sizeof(mcast_addr));
+	safe_strncpy(mcast_addr, ap->sprint(&sas, flag_not & FLAG_NUM_HOST),
+		sizeof(mcast_addr));
 	printf("%-15s %-6d %s\n", device, refcnt, mcast_addr);
 #endif
     } else {    /* IPV4 */
@@ -695,21 +742,20 @@ static void igmp_do_one(int lnr, const char *line,const char *prot)
 		fprintf(stderr, _("warning, got bogus igmp line %d.\n"), lnr);
 		return;
 	    }
-	    sscanf( mcast_addr, "%X",
-		    &((struct sockaddr_in *) &mcastaddr)->sin_addr.s_addr );
-	    ((struct sockaddr *) &mcastaddr)->sa_family = AF_INET;
+	    sscanf(mcast_addr, "%X", &sin->sin_addr.s_addr);
+	    sas.ss_family = AF_INET;
 	} else {
 	    fprintf(stderr, _("warning, got bogus igmp line %d.\n"), lnr);
 	    return;
 	}
 
-	if ((ap = get_afntype(((struct sockaddr *) &mcastaddr)->sa_family)) == NULL) {
+	if ((ap = get_afntype(sas.ss_family)) == NULL) {
 	    fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-		    ((struct sockaddr *) &mcastaddr)->sa_family);
+		    sas.ss_family);
 	    return;
 	}
-	safe_strncpy(mcast_addr, ap->sprint((struct sockaddr *) &mcastaddr,
-				      flag_not & FLAG_NUM_HOST), sizeof(mcast_addr));
+	safe_strncpy(mcast_addr, ap->sprint(&sas, flag_not & FLAG_NUM_HOST),
+		sizeof(mcast_addr));
 	printf("%-15s %-6d %s\n", device, refcnt, mcast_addr );
 #endif
     }    /* IPV4 */
@@ -773,176 +819,270 @@ static int igmp_info(void)
 	       igmp_do_one, "igmp", "igmp6");
 }
 
-static int ip_parse_dots(uint32_t *addr, char const *src) {
-  unsigned  a, b, c, d;
-  unsigned  ret = 4-sscanf(src, "%u.%u.%u.%u", &a, &b, &c, &d);
-  *addr = htonl((a << 24)|(b << 16)|(c << 8)|d);
-  return  ret;
-}
-
-static void print_ip_service(struct sockaddr_in *addr, char const *protname,
-			     char *buf, unsigned size) {
-  struct aftype *ap;
-
-  if(size == 0)  return;
-
-  /* print host */
-  if((ap = get_afntype(addr->sin_family)) == NULL) {
-    fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-	    addr->sin_family);
-    return;
-  }
-  safe_strncpy(buf, ap->sprint((struct sockaddr*)addr, flag_not), size);
-
-  /* print service */
-  if(flag_all || (flag_lst && !addr->sin_port) || (!flag_lst && addr->sin_port)) {
-    char  bfs[32];
-
-    snprintf(bfs, sizeof(bfs), "%s",
-	     get_sname(addr->sin_port, (char*)protname, flag_not & FLAG_NUM_PORT));
-
-    /* check if we must cut on host and/or service name */
-    {
-      unsigned const  bufl = strlen(buf);
-      unsigned const  bfsl = strlen(bfs);
-
-      if(bufl+bfsl+2 > size) {
-	unsigned const  half = (size-2)>>1;
-	if(bufl > half) {
-	  if(bfsl > half) {
-	    buf[size-2-half] = '\0';
-	    bfs[half+1]      = '\0';
-	  }
-	  else  buf[size-2-bfsl] = '\0';
-	}
-	else  bfs[size-2-bufl] = '\0';
-      }
+static const char *sctp_socket_state_str(int state)
+{
+    if (state >= 0 && state < ARRAY_SIZE(tcp_state))
+	return tcp_state[state];
+    else {
+	static char state_str_buf[64];
+	sprintf(state_str_buf, "UNKNOWN(%d)", state);
+	return state_str_buf;
     }
-    strcat(buf, ":");
-    strcat(buf, bfs);
-  }
 }
 
-/* process single SCTP endpoint */
-static void sctp_do_ept(int lnr, char const *line, const char *prot)
+static const struct aftype *process_sctp_addr_str(const char *addr_str, struct sockaddr_storage *sas)
 {
-  struct sockaddr_in  laddr, raddr;
-  unsigned            uid, inode;
-
-  char        l_addr[23], r_addr[23];
-
-  /* fill sockaddr_in structures */
-  {
-    unsigned  lport;
-    unsigned  ate;
-
-    if(lnr == 0)  return;
-    if(sscanf(line, "%*X %*X %*u %*u %*u %u %u %u %n",
-	      &lport, &uid, &inode, &ate) < 3)  goto err;
-
-    /* decode IP address */
-    if(ip_parse_dots(&laddr.sin_addr.s_addr, line+ate))  goto err;
-    raddr.sin_addr.s_addr = htonl(0);
-    laddr.sin_family = raddr.sin_family = AF_INET;
-    laddr.sin_port = htons(lport);
-    raddr.sin_port = htons(0);
-  }
-
-  /* print IP:service to l_addr and r_addr */
-  print_ip_service(&laddr, prot, l_addr, sizeof(l_addr));
-  print_ip_service(&raddr, prot, r_addr, sizeof(r_addr));
-
-  /* Print line */
-  printf("%-4s  %6d %6d %-*s %-*s %-11s",
-	 prot, 0, 0,
-	 (int)netmax(23,strlen(l_addr)), l_addr,
-	 (int)netmax(23,strlen(r_addr)), r_addr,
-	 _(tcp_state[TCP_LISTEN]));
-  finish_this_one(uid, inode, "");
-  return;
- err:
-  fprintf(stderr, "SCTP error in line: %d\n", lnr);
-}
-
-/* process single SCTP association */
-static void sctp_do_assoc(int lnr, char const *line, const char *prot)
-{
-  struct sockaddr_in  laddr, raddr;
-  unsigned long       rxq, txq;
-  unsigned            uid, inode;
-
-  char        l_addr[23], r_addr[23];
-
-  /* fill sockaddr_in structures */
-  {
-    unsigned    lport, rport;
-    unsigned    ate;
-    char const *addr;
-
-    if(lnr == 0)  return;
-    if(sscanf(line, "%*X %*X %*u %*u %*u %*u %*u %lu %lu %u %u %u %u %n",
-	      &txq, &rxq, &uid, &inode, &lport, &rport, &ate) < 6)  goto err;
-
-    /* decode IP addresses */
-    addr = strchr(line+ate, '*');
-    if(addr == 0)  goto err;
-    if(ip_parse_dots(&laddr.sin_addr.s_addr, ++addr))  goto err;
-    addr = strchr(addr, '*');
-    if(addr == 0)  goto err;
-    if(ip_parse_dots(&raddr.sin_addr.s_addr, ++addr))  goto err;
-
-    /* complete sockaddr_in structures */
-    laddr.sin_family = raddr.sin_family = AF_INET;
-    laddr.sin_port = htons(lport);
-    raddr.sin_port = htons(rport);
-  }
-
-  /* print IP:service to l_addr and r_addr */
-  print_ip_service(&laddr, prot, l_addr, sizeof(l_addr));
-  print_ip_service(&raddr, prot, r_addr, sizeof(r_addr));
-
-  /* Print line */
-  printf("%-4s  %6ld %6ld %-*s %-*s %-11s",
-	 prot, rxq, txq,
-	 (int)netmax(23,strlen(l_addr)), l_addr,
-	 (int)netmax(23,strlen(r_addr)), r_addr,
-	 _(tcp_state[TCP_ESTABLISHED]));
-  finish_this_one(uid, inode, "");
-  return;
- err:
-  fprintf(stderr, "SCTP error in line: %d\n", lnr);
-}
-
-static int sctp_info_epts(void) {
-  INFO_GUTS6(_PATH_PROCNET_SCTPEPTS, _PATH_PROCNET_SCTP6EPTS, "AF INET (sctp)",
-	     sctp_do_ept, "sctp", "sctp6");
-}
-
-static int sctp_info_assocs(void) {
-  INFO_GUTS6(_PATH_PROCNET_SCTPASSOCS, _PATH_PROCNET_SCTP6ASSOCS, "AF INET (sctp)",
-	     sctp_do_assoc, "sctp", "sctp6");
-}
-
-static int sctp_info(void) {
-  int  res;
-  res = sctp_info_epts();
-  if(res)  return  res;
-  return  sctp_info_assocs();
-}
-
-static void addr_do_one(char *buf, size_t buf_len, size_t short_len, struct aftype *ap,
+    if (strchr(addr_str,':')) {
 #if HAVE_AFINET6
-			struct sockaddr_in6 *addr,
-#else
-			struct sockaddr_in *addr,
+	extern struct aftype inet6_aftype;
+	/* Demangle what the kernel gives us */
+	struct in6_addr in6;
+	char addr6_str[INET6_ADDRSTRLEN];
+	unsigned u0, u1, u2, u3, u4, u5, u6, u7;
+	sscanf(addr_str, "%04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X",
+	       &u0, &u1, &u2, &u3, &u4, &u5, &u6, &u7);
+	in6.s6_addr16[0] = htons(u0);
+	in6.s6_addr16[1] = htons(u1);
+	in6.s6_addr16[2] = htons(u2);
+	in6.s6_addr16[3] = htons(u3);
+	in6.s6_addr16[4] = htons(u4);
+	in6.s6_addr16[5] = htons(u5);
+	in6.s6_addr16[6] = htons(u6);
+	in6.s6_addr16[7] = htons(u7);
+
+	inet_ntop(AF_INET6, &in6, addr6_str, sizeof(addr6_str));
+	inet6_aftype.input(1, addr6_str, sas);
+	sas->ss_family = AF_INET6;
 #endif
+    } else {
+	struct sockaddr_in *sin = (struct sockaddr_in *)sas;
+	sin->sin_addr.s_addr = inet_addr(addr_str);
+	sas->ss_family = AF_INET;
+    }
+    return get_afntype(sas->ss_family);
+}
+
+static void sctp_eps_do_one(int lnr, char *line, const char *proto)
+{
+    char buffer[1024];
+    int state, port;
+    int uid;
+    unsigned long inode;
+    const struct aftype *ap;
+    struct sockaddr_storage localsas;
+    const char *sst_str;
+    const char *lport_str;
+    const char *uid_str;
+    const char *inode_str;
+    char *laddrs_str;
+
+    if (lnr == 0) {
+	/* ENDPT     SOCK   STY SST HBKT LPORT   UID INODE LADDRS */
+	return;
+    }
+    strtok(line, " \t\n");	/* skip endpt */
+    strtok(0, " \t\n");		/* skip sock */
+    strtok(0, " \t\n");		/* skip sty */
+    sst_str = strtok(0, " \t\n");
+    strtok(0, " \t\n");		/* skip hash bucket */
+    lport_str = strtok(0, " \t\n");
+    uid_str = strtok(0, " \t\n");
+    inode_str = strtok(0, " \t\n");
+    laddrs_str = strtok(0, "\t\n");
+
+    if (!sst_str || !lport_str || !uid_str || !inode_str) {
+	fprintf(stderr, _("warning, got bogus sctp eps line.\n"));
+	return;
+    }
+    state = atoi(sst_str);
+    port = atoi(lport_str);
+    uid = atoi(uid_str);
+    inode = strtoul(inode_str,0,0);
+
+    const char *this_local_addr;
+    int first = 1;
+    char local_port[16];
+    snprintf(local_port, sizeof(local_port), "%s",
+        get_sname(htons(port), proto, flag_not & FLAG_NUM_PORT));
+    for (this_local_addr = strtok(laddrs_str, " \t\n");
+         this_local_addr;
+         this_local_addr = strtok(0, " \t\n")) {
+	char local_addr[64];
+	ap = process_sctp_addr_str(this_local_addr, &localsas);
+	if (ap)
+	    safe_strncpy(local_addr, ap->sprint(&localsas, flag_not), sizeof(local_addr));
+	else
+	    sprintf(local_addr, _("unsupported address family %d"), localsas.ss_family);
+
+	if (first)
+	    printf("sctp                ");
+	else
+	    printf("\n                    ");
+	sprintf(buffer, "%s:%s", local_addr, local_port);
+	printf("%-47s", buffer);
+	printf(" %-11s", first ? sctp_socket_state_str(state) : "");
+	first = 0;
+    }
+    finish_this_one(uid, inode, "");
+}
+
+static void sctp_assoc_do_one(int lnr, char *line, const char *proto)
+{
+    char buffer[1024];
+    int state, lport,rport;
+    int uid;
+    unsigned rxqueue,txqueue;
+    unsigned long inode;
+
+    const struct aftype *ap;
+    struct sockaddr_storage localsas, remotesas;
+    const char *sst_str;
+    const char *txqueue_str;
+    const char *rxqueue_str;
+    const char *lport_str, *rport_str;
+    const char *uid_str;
+    const char *inode_str;
+    char *laddrs_str;
+    char *raddrs_str;
+
+    if (lnr == 0) {
+	/* ASSOC     SOCK   STY SST ST HBKT ASSOC-ID TX_QUEUE RX_QUEUE UID INODE LPORT RPORT LADDRS <-> RADDRS */
+	return;
+    }
+
+    strtok(line, " \t\n");	/* skip assoc */
+    strtok(0, " \t\n");		/* skip sock */
+    strtok(0, " \t\n");		/* skip sty */
+    sst_str = strtok(0, " \t\n");
+    strtok(0, " \t\n");
+    strtok(0, " \t\n");		/* skip hash bucket */
+    strtok(0, " \t\n");		/* skip hash assoc-id */
+    txqueue_str =  strtok(0, " \t\n");
+    rxqueue_str =  strtok(0, " \t\n");
+    uid_str = strtok(0, " \t\n");
+    inode_str = strtok(0, " \t\n");
+    lport_str = strtok(0, " \t\n");
+    rport_str = strtok(0, " \t\n");
+    laddrs_str = strtok(0, "<->\t\n");
+    raddrs_str = strtok(0, "<->\t\n");
+
+    if (!sst_str || !txqueue_str || !rxqueue_str || !uid_str ||
+        !inode_str || !lport_str || !rport_str) {
+	fprintf(stderr, _("warning, got bogus sctp assoc line.\n"));
+	return;
+    }
+
+    state = atoi(sst_str);
+    txqueue = atoi(txqueue_str);
+    rxqueue = atoi(rxqueue_str);
+    uid = atoi(uid_str);
+    inode = strtoul(inode_str, 0, 0);
+    lport = atoi(lport_str);
+    rport = atoi(rport_str);
+
+    /*print all addresses*/
+    const char *this_local_addr;
+    const char *this_remote_addr;
+    char *ss1, *ss2;
+    int first = 1;
+    char local_port[16];
+    char remote_port[16];
+    snprintf(local_port, sizeof(local_port), "%s",
+             get_sname(htons(lport), proto,
+             flag_not & FLAG_NUM_PORT));
+    snprintf(remote_port, sizeof(remote_port), "%s",
+             get_sname(htons(rport), proto,
+             flag_not & FLAG_NUM_PORT));
+
+    this_local_addr = strtok_r(laddrs_str, " \t\n", &ss1);
+    this_remote_addr = strtok_r(raddrs_str, " \t\n", &ss2);
+    while (this_local_addr || this_remote_addr) {
+	char local_addr[64];
+	char remote_addr[64];
+
+	if (this_local_addr) {
+	    if (this_local_addr[0] == '*') {
+		/* skip * */
+		this_local_addr++;
+	    }
+	    ap = process_sctp_addr_str(this_local_addr, &localsas);
+	    if (ap)
+		safe_strncpy(local_addr,
+		             ap->sprint(&localsas, flag_not), sizeof(local_addr));
+	    else
+		sprintf(local_addr, _("unsupported address family %d"), localsas.ss_family);
+	}
+	if (this_remote_addr) {
+	    if (this_remote_addr[0] == '*') {
+		/* skip * */
+		this_remote_addr++;
+	    }
+	    ap = process_sctp_addr_str(this_remote_addr, &remotesas);
+	    if (ap)
+		safe_strncpy(remote_addr,
+		             ap->sprint(&remotesas, flag_not), sizeof(remote_addr));
+	    else
+		sprintf(remote_addr, _("unsupported address family %d"), remotesas.ss_family);
+	}
+
+	if (first)
+	    printf("sctp  %6u %6u ", rxqueue, txqueue);
+	else
+	    printf("\n                    ");
+	if (this_local_addr) {
+	    if (first)
+		sprintf(buffer, "%s:%s", local_addr, local_port);
+	    else
+		sprintf(buffer, "%s", local_addr);
+	    printf("%-23s", buffer);
+	} else
+	    printf("%-23s", "");
+	printf(" ");
+	if (this_remote_addr) {
+	    if (first)
+		sprintf(buffer, "%s:%s", remote_addr, remote_port);
+	    else
+		sprintf(buffer, "%s", remote_addr);
+	    printf("%-23s", buffer);
+	} else
+	    printf("%-23s", "");
+
+       printf(" %-11s", first ? sctp_socket_state_str(state) : "");
+
+       first = 0;
+       this_local_addr = strtok_r(0, " \t\n", &ss1);
+       this_remote_addr = strtok_r(0, " \t\n", &ss2);
+    }
+    finish_this_one(uid, inode, "");
+}
+
+static int sctp_info_eps(void)
+{
+    INFO_GUTS6(_PATH_PROCNET_SCTPEPTS, _PATH_PROCNET_SCTP6EPTS, "AF INET (sctp)",
+               sctp_eps_do_one, "sctp", "sctp6");
+}
+
+static int sctp_info_assocs(void)
+{
+    INFO_GUTS6(_PATH_PROCNET_SCTPASSOCS, _PATH_PROCNET_SCTP6ASSOCS, "AF INET (sctp)",
+               sctp_assoc_do_one, "sctp", "sctp6");
+}
+
+static int sctp_info(void)
+{
+  int res = sctp_info_eps();
+  return res ? res : sctp_info_assocs();
+}
+
+static void addr_do_one(char *buf, size_t buf_len, size_t short_len, const struct aftype *ap,
+			const struct sockaddr_storage *addr,
 			int port, const char *proto
 )
 {
     const char *sport, *saddr;
     size_t port_len, addr_len;
 
-    saddr = ap->sprint((struct sockaddr *)addr, flag_not & FLAG_NUM_HOST);
+    saddr = ap->sprint(addr, flag_not & FLAG_NUM_HOST);
     sport = get_sname(htons(port), proto, flag_not & FLAG_NUM_PORT);
     addr_len = strlen(saddr);
     port_len = strlen(sport);
@@ -963,15 +1103,16 @@ static void tcp_do_one(int lnr, const char *line, const char *prot)
     unsigned long rxq, txq, time_len, retr, inode;
     int num, local_port, rem_port, d, state, uid, timer_run, timeout;
     char rem_addr[128], local_addr[128], timers[64];
-    struct aftype *ap;
+    const struct aftype *ap;
+    struct sockaddr_storage localsas, remsas;
+    struct sockaddr_in *localaddr = (struct sockaddr_in *)&localsas;
+    struct sockaddr_in *remaddr = (struct sockaddr_in *)&remsas;
 #if HAVE_AFINET6
-    struct sockaddr_in6 localaddr, remaddr;
     char addr6[INET6_ADDRSTRLEN];
     struct in6_addr in6;
     extern struct aftype inet6_aftype;
-#else
-    struct sockaddr_in localaddr, remaddr;
 #endif
+    long clk_tck = ticks_per_second();
 
     if (lnr == 0)
 	return;
@@ -996,32 +1137,30 @@ static void tcp_do_one(int lnr, const char *line, const char *prot)
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
            &in6.s6_addr32[2], &in6.s6_addr32[3]);
 	inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &localaddr);
+	inet6_aftype.input(1, addr6, &localsas);
 	sscanf(rem_addr, "%08X%08X%08X%08X",
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
 	       &in6.s6_addr32[2], &in6.s6_addr32[3]);
 	inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &remaddr);
-	localaddr.sin6_family = AF_INET6;
-	remaddr.sin6_family = AF_INET6;
+	inet6_aftype.input(1, addr6, &remsas);
+	localsas.ss_family = AF_INET6;
+	remsas.ss_family = AF_INET6;
 #endif
     } else {
-	sscanf(local_addr, "%X",
-	       &((struct sockaddr_in *) &localaddr)->sin_addr.s_addr);
-	sscanf(rem_addr, "%X",
-	       &((struct sockaddr_in *) &remaddr)->sin_addr.s_addr);
-	((struct sockaddr *) &localaddr)->sa_family = AF_INET;
-	((struct sockaddr *) &remaddr)->sa_family = AF_INET;
+	sscanf(local_addr, "%X", &localaddr->sin_addr.s_addr);
+	sscanf(rem_addr, "%X", &remaddr->sin_addr.s_addr);
+	localsas.ss_family = AF_INET;
+	remsas.ss_family = AF_INET;
     }
 
-    if ((ap = get_afntype(((struct sockaddr *) &localaddr)->sa_family)) == NULL) {
+    if ((ap = get_afntype(localsas.ss_family)) == NULL) {
 	fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-		((struct sockaddr *) &localaddr)->sa_family);
+		localsas.ss_family);
 	return;
     }
 
-	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localaddr, local_port, "tcp");
-	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remaddr, rem_port, "tcp");
+	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localsas, local_port, "tcp");
+	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remsas, rem_port, "tcp");
 
 	timers[0] = '\0';
 	if (flag_opt)
@@ -1032,22 +1171,27 @@ static void tcp_do_one(int lnr, const char *line, const char *prot)
 
 	    case 1:
 		snprintf(timers, sizeof(timers), _("on (%2.2f/%ld/%d)"),
-			 (double) time_len / HZ, retr, timeout);
+			 (double) time_len / clk_tck, retr, timeout);
 		break;
 
 	    case 2:
 		snprintf(timers, sizeof(timers), _("keepalive (%2.2f/%ld/%d)"),
-			 (double) time_len / HZ, retr, timeout);
+			 (double) time_len / clk_tck, retr, timeout);
 		break;
 
 	    case 3:
 		snprintf(timers, sizeof(timers), _("timewait (%2.2f/%ld/%d)"),
-			 (double) time_len / HZ, retr, timeout);
+			 (double) time_len / clk_tck, retr, timeout);
+		break;
+
+	    case 4:
+		snprintf(timers, sizeof(timers), _("probe (%2.2f/%ld/%d)"),
+			 (double) time_len / clk_tck, retr, timeout);
 		break;
 
 	    default:
 		snprintf(timers, sizeof(timers), _("unkn-%d (%2.2f/%ld/%d)"),
-			 timer_run, (double) time_len / HZ, retr, timeout);
+			 timer_run, (double) time_len / clk_tck, retr, timeout);
 		break;
 	    }
 
@@ -1140,20 +1284,38 @@ static int mptcp_info(void)
     INFO_GUTS(_PATH_PROCNET_MPTCP, "AF INET (mptcp)", mptcp_do_one, "mptcp");
 }
 
+static int notnull(const struct sockaddr_storage *sas)
+{
+    const struct sockaddr_in *sin = (const struct sockaddr_in *)sas;
+
+#if HAVE_AFINET6
+    const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sas;
+
+    if (sin6->sin6_family == AF_INET6) {
+	return sin6->sin6_addr.s6_addr32[0] ||
+		sin6->sin6_addr.s6_addr32[1] ||
+		sin6->sin6_addr.s6_addr32[2] ||
+		sin6->sin6_addr.s6_addr32[3];
+    }
+#endif
+
+    return sin->sin_addr.s_addr;
+}
+
 static void udp_do_one(int lnr, const char *line,const char *prot)
 {
-    char local_addr[64], rem_addr[64];
+    char local_addr[128], rem_addr[128];
     char *udp_state, timers[64];
     int num, local_port, rem_port, d, state, timer_run, uid, timeout;
+    struct sockaddr_storage localsas, remsas;
+    struct sockaddr_in *localaddr = (struct sockaddr_in *)&localsas;
+    struct sockaddr_in *remaddr = (struct sockaddr_in *)&remsas;
 #if HAVE_AFINET6
-    struct sockaddr_in6 localaddr, remaddr;
     char addr6[INET6_ADDRSTRLEN];
     struct in6_addr in6;
     extern struct aftype inet6_aftype;
-#else
-    struct sockaddr_in localaddr, remaddr;
 #endif
-    struct aftype *ap;
+    const struct aftype *ap;
     unsigned long rxq, txq, time_len, retr, inode;
 
     if (lnr == 0)
@@ -1176,29 +1338,27 @@ static void udp_do_one(int lnr, const char *line,const char *prot)
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
 	       &in6.s6_addr32[2], &in6.s6_addr32[3]);
 	inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &localaddr);
+	inet6_aftype.input(1, addr6, &localsas);
 	sscanf(rem_addr, "%08X%08X%08X%08X",
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
 	       &in6.s6_addr32[2], &in6.s6_addr32[3]);
 	inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &remaddr);
-	localaddr.sin6_family = AF_INET6;
-	remaddr.sin6_family = AF_INET6;
+	inet6_aftype.input(1, addr6, &remsas);
+	localsas.ss_family = AF_INET6;
+	remsas.ss_family = AF_INET6;
 #endif
     } else {
-	sscanf(local_addr, "%X",
-	       &((struct sockaddr_in *) &localaddr)->sin_addr.s_addr);
-	sscanf(rem_addr, "%X",
-	       &((struct sockaddr_in *) &remaddr)->sin_addr.s_addr);
-	((struct sockaddr *) &localaddr)->sa_family = AF_INET;
-	((struct sockaddr *) &remaddr)->sa_family = AF_INET;
+	sscanf(local_addr, "%X", &localaddr->sin_addr.s_addr);
+	sscanf(rem_addr, "%X", &remaddr->sin_addr.s_addr);
+	localsas.ss_family = AF_INET;
+	remsas.ss_family = AF_INET;
     }
 
     retr = 0L;
 
-    if ((ap = get_afntype(((struct sockaddr *) &localaddr)->sa_family)) == NULL) {
+    if ((ap = get_afntype(localsas.ss_family)) == NULL) {
 	fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-		((struct sockaddr *) &localaddr)->sa_family);
+		localsas.ss_family);
 	return;
     }
     switch (state) {
@@ -1215,22 +1375,10 @@ static void udp_do_one(int lnr, const char *line,const char *prot)
 	break;
     }
 
-#if HAVE_AFINET6
-#define notnull(A) (((A.sin6_family == AF_INET6) && \
-	 ((A.sin6_addr.s6_addr32[0]) ||            \
-	  (A.sin6_addr.s6_addr32[1]) ||            \
-	  (A.sin6_addr.s6_addr32[2]) ||            \
-	  (A.sin6_addr.s6_addr32[3]))) ||          \
-	((A.sin6_family == AF_INET) &&             \
-	 ((struct sockaddr_in *) &A)->sin_addr.s_addr))
-#else
-#define notnull(A) (A.sin_addr.s_addr)
-#endif
-
-    if (flag_all || (notnull(remaddr) && !flag_lst) || (!notnull(remaddr) && flag_lst))
+    if (flag_all || (notnull(&remsas) && !flag_lst) || (!notnull(&remsas) && flag_lst))
     {
-	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localaddr, local_port, "udp");
-	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remaddr, rem_port, "udp");
+	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localsas, local_port, "udp");
+	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remsas, rem_port, "udp");
 
 	timers[0] = '\0';
 	if (flag_opt)
@@ -1270,18 +1418,18 @@ static int udplite_info(void)
 
 static void raw_do_one(int lnr, const char *line,const char *prot)
 {
-    char local_addr[64], rem_addr[64];
+    char local_addr[128], rem_addr[128];
     char timers[64];
     int num, local_port, rem_port, d, state, timer_run, uid, timeout;
+    struct sockaddr_storage localsas, remsas;
+    struct sockaddr_in *localaddr = (struct sockaddr_in *)&localsas;
+    struct sockaddr_in *remaddr = (struct sockaddr_in *)&remsas;
 #if HAVE_AFINET6
-    struct sockaddr_in6 localaddr, remaddr;
     char addr6[INET6_ADDRSTRLEN];
     struct in6_addr in6;
     extern struct aftype inet6_aftype;
-#else
-    struct sockaddr_in localaddr, remaddr;
 #endif
-    struct aftype *ap;
+    const struct aftype *ap;
     unsigned long rxq, txq, time_len, retr, inode;
 
     if (lnr == 0)
@@ -1303,39 +1451,31 @@ static void raw_do_one(int lnr, const char *line,const char *prot)
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
            &in6.s6_addr32[2], &in6.s6_addr32[3]);
     inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &localaddr);
+	inet6_aftype.input(1, addr6, &localsas);
 	sscanf(rem_addr, "%08X%08X%08X%08X",
 	       &in6.s6_addr32[0], &in6.s6_addr32[1],
            &in6.s6_addr32[2], &in6.s6_addr32[3]);
     inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-	inet6_aftype.input(1, addr6, (struct sockaddr *) &remaddr);
-	localaddr.sin6_family = AF_INET6;
-	remaddr.sin6_family = AF_INET6;
+	inet6_aftype.input(1, addr6, &remsas);
+	localsas.ss_family = AF_INET6;
+	remsas.ss_family = AF_INET6;
 #endif
     } else {
-	sscanf(local_addr, "%X",
-	       &((struct sockaddr_in *) &localaddr)->sin_addr.s_addr);
-	sscanf(rem_addr, "%X",
-	       &((struct sockaddr_in *) &remaddr)->sin_addr.s_addr);
-	((struct sockaddr *) &localaddr)->sa_family = AF_INET;
-	((struct sockaddr *) &remaddr)->sa_family = AF_INET;
+	sscanf(local_addr, "%X", &localaddr->sin_addr.s_addr);
+	sscanf(rem_addr, "%X", &remaddr->sin_addr.s_addr);
+	localsas.ss_family = AF_INET;
+	remsas.ss_family = AF_INET;
     }
-#if HAVE_AFINET6
-    if ((ap = get_afntype(localaddr.sin6_family)) == NULL) {
-	fprintf(stderr, _("netstat: unsupported address family %d !\n"), localaddr.sin6_family);
-	return;
-    }
-#else
-    if ((ap = get_afntype(localaddr.sin_family)) == NULL) {
-	fprintf(stderr, _("netstat: unsupported address family %d !\n"), localaddr.sin_family);
-	return;
-    }
-#endif
 
-    if (flag_all || (notnull(remaddr) && !flag_lst) || (!notnull(remaddr) && flag_lst))
+    if ((ap = get_afntype(localsas.ss_family)) == NULL) {
+	fprintf(stderr, _("netstat: unsupported address family %d !\n"), localsas.ss_family);
+	return;
+    }
+
+    if (flag_all || (notnull(&remsas) && !flag_lst) || (!notnull(&remsas) && flag_lst))
     {
-	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localaddr, local_port, "raw");
-	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remaddr, rem_port, "raw");
+	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localsas, local_port, "raw");
+	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remsas, rem_port, "raw");
 
 	timers[0] = '\0';
 	if (flag_opt)
@@ -1631,10 +1771,10 @@ static int ipx_info(void)
     unsigned int uid;
     char *st;
     int nc;
-    struct aftype *ap;
+    const struct aftype *ap;
     struct passwd *pw;
     char sad[50], dad[50];
-    struct sockaddr sa;
+    struct sockaddr_storage sa;
     unsigned sport = 0, dport = 0;
     struct stat s;
 
@@ -1721,13 +1861,13 @@ static int ipx_info(void)
 	}
 
 	/* Fetch and resolve the Source */
-	(void) ap->input(4, sad, &sa);
+	(void) ap->input(0, sad, &sa);
 	safe_strncpy(buf, ap->sprint(&sa, flag_not & FLAG_NUM_HOST), sizeof(buf));
 	snprintf(sad, sizeof(sad), "%s:%04X", buf, sport);
 
 	if (!nc) {
 	    /* Fetch and resolve the Destination */
-	    (void) ap->input(4, dad, &sa);
+	    (void) ap->input(0, dad, &sa);
 	    safe_strncpy(buf, ap->sprint(&sa, flag_not & FLAG_NUM_HOST), sizeof(buf));
 	    snprintf(dad, sizeof(dad), "%s:%04X", buf, dport);
 	} else
@@ -1777,16 +1917,21 @@ const char *bluetooth_state(int state)
 static void l2cap_do_one(int nr, const char *line, const char *prot)
 {
     char daddr[18], saddr[18];
-    unsigned state, psm, dcid, scid, imtu, omtu, sec_level;
+    unsigned dtype, stype, state, psm, dcid, scid, imtu, omtu, sec_level;
     int num;
     const char *bt_state, *bt_sec_level;
 
-    num = sscanf(line, "%17s %17s %d %d 0x%04x 0x%04x %d %d %d",
-	daddr, saddr, &state, &psm, &dcid, &scid, &imtu, &omtu, &sec_level);
+    num = sscanf(line, "%17s (%u) %17s (%u) %d %d 0x%04x 0x%04x %d %d %d",
+	daddr, &dtype, saddr, &stype, &state, &psm, &dcid, &scid, &imtu, &omtu, &sec_level);
 
-    if (num < 9) {
-	fprintf(stderr, _("warning, got bogus l2cap line.\n"));
-	return;
+    if (num != 11) {
+	num = sscanf(line, "%17s %17s %d %d 0x%04x 0x%04x %d %d %d",
+	    daddr, saddr, &state, &psm, &dcid, &scid, &imtu, &omtu, &sec_level);
+
+	if (num != 9) {
+	    fprintf(stderr, _("warning, got bogus l2cap line.\n"));
+	    return;
+	}
     }
 
     if (flag_lst && !(state == BT_LISTEN || state == BT_BOUND))
@@ -1822,7 +1967,7 @@ static int l2cap_info(void)
 {
     printf("%-6s %-17s %-17s %-9s %7s %-6s %-6s %7s %7s %-7s\n",
 	"Proto", "Destination", "Source", "State", "PSM", "DCID", "SCID", "IMTU", "OMTU", "Security");
-    INFO_GUTS(_PATH_SYS_BLUETOOTH_L2CAP, "AF BLUETOOTH", l2cap_do_one, "l2cap");
+    INFO_GUTS(_PATH_SYS_BLUETOOTH_L2CAP, "BTPROTO L2CAP", l2cap_do_one, "l2cap");
 }
 
 static void rfcomm_do_one(int nr, const char *line, const char *prot)
@@ -1853,7 +1998,7 @@ static void rfcomm_do_one(int nr, const char *line, const char *prot)
 static int rfcomm_info(void)
 {
     printf("%-6s %-17s %-17s %-9s %7s\n", "Proto", "Destination", "Source", "State", "Channel");
-    INFO_GUTS(_PATH_SYS_BLUETOOTH_RFCOMM, "AF BLUETOOTH", rfcomm_do_one, "rfcomm");
+    INFO_GUTS(_PATH_SYS_BLUETOOTH_RFCOMM, "BTPROTO RFCOMM", rfcomm_do_one, "rfcomm");
 }
 #endif
 
@@ -1893,7 +2038,7 @@ static void version(void)
 }
 
 
-static void usage(void)
+static void usage(int rc)
 {
     fprintf(stderr, _("usage: netstat [-vWeenNcCF] [<Af>] -r         netstat {-V|--version|-h|--help}\n"));
     fprintf(stderr, _("       netstat [-vWnNcaeol] [<Socket> ...]\n"));
@@ -1931,7 +2076,7 @@ static void usage(void)
     fprintf(stderr, _("  <AF>=Use '-6|-4' or '-A <af>' or '--<af>'; default: %s\n"), DFLT_AF);
     fprintf(stderr, _("  List of possible address families (which support routing):\n"));
     print_aflist(1); /* 1 = routeable */
-    exit(E_USAGE);
+    exit(rc);
 }
 
 
@@ -1988,7 +2133,7 @@ int main
     getroute_init();		/* Set up AF routing support */
 
     afname[0] = '\0';
-    while ((i = getopt_long(argc, argv, "A:CFMacdeghilnNoprsStmuUvVWwx64?Z", longopts, &lop)) != EOF)
+    while ((i = getopt_long(argc, argv, "A:CFMacdeghilnNoprsStmuUvVWw2fx64?Z", longopts, &lop)) != EOF)
 	switch (i) {
 	case -1:
 	    break;
@@ -2119,18 +2264,19 @@ int main
 
 	    break;
 	case '?':
+	    usage(E_OPTERR);
 	case 'h':
-	    usage();
+	    usage(E_USAGE);
 	case 's':
 	    flag_sta++;
 	}
 
     if (flag_int + flag_rou + flag_mas + flag_sta > 1)
-	usage();
+	usage(E_OPTERR);
 
-    if ((flag_inet || flag_inet6 || flag_sta) && 
+    if ((flag_inet || flag_inet6 || flag_sta) &&
         !(flag_tcp || flag_sctp || flag_mptcp || flag_udp || flag_udplite || flag_raw))
-	   flag_tcp = flag_mptcp = flag_sctp = flag_udp = flag_udplite = flag_raw = 1;
+	   flag_noprot = flag_tcp = flag_mptcp = flag_sctp = flag_udp = flag_udplite = flag_raw = 1;
 
     if ((flag_tcp || flag_sctp || flag_mptcp || flag_udp || flag_udplite || flag_raw || flag_igmp) && 
         !(flag_inet || flag_inet6))
@@ -2169,14 +2315,12 @@ int main
 
         if (!strcmp(afname, "inet")) {
 #if HAVE_AFINET
-            inittab();
-            parsesnmp(flag_raw, flag_tcp, flag_udp);
+            parsesnmp(flag_raw, flag_tcp, flag_udp, flag_sctp);
 #else
             ENOSUPP("netstat", "AF INET");
 #endif
         } else if(!strcmp(afname, "inet6")) {
 #if HAVE_AFINET6
-            inittab6();
             parsesnmp6(flag_raw, flag_tcp, flag_udp);
 #else
             ENOSUPP("netstat", "AF INET6");
@@ -2364,7 +2508,7 @@ int main
 #endif
 	}
 	if (!flag_arg || flag_rose) {
-#if 0 && HAVE_AFROSE
+#if HAVE_AFROSE
           i = rose_info();
           if (i)
             return (i);

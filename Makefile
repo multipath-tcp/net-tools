@@ -33,23 +33,35 @@ SBINDIR ?= /sbin
 NET_LIB_PATH = lib
 NET_LIB_NAME = net-tools
 
-PROGS	:= ifconfig arp netstat route rarp slattach plipconfig nameif
+PROGS	:= ifconfig netstat route nameif
 
 -include config.make
+ifeq ($(HAVE_ARP_TOOLS),1)
+PROGS	+= arp rarp
+endif
+ifeq ($(HAVE_HOSTNAME_TOOLS),1)
+PROGS	+= hostname
+endif
 ifeq ($(HAVE_IP_TOOLS),1)
 PROGS   += iptunnel ipmaddr
 endif
 ifeq ($(HAVE_MII),1)
 PROGS	+= mii-tool
 endif
+ifeq ($(HAVE_PLIP_TOOLS),1)
+PROGS	+= plipconfig
+endif
+ifeq ($(HAVE_SERIAL_TOOLS),1)
+PROGS	+= slattach
+endif
 
 # Compiler and Linker Options
-# You may need to uncomment and edit these if you are using libc5 and IPv6.
 CFLAGS ?= -O2 -g
 CFLAGS += -Wall
 CFLAGS += -fno-strict-aliasing # code needs a lot of work before strict aliasing is safe
 CPPFLAGS += -D_GNU_SOURCE
-RESLIB = # -L/usr/inet6/lib -linet6
+# Turn on transparent support for LFS
+CPPFLAGS += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
 
 ifeq ($(HAVE_AFDECnet),1)
 DNLIB = -ldnet
@@ -102,33 +114,33 @@ install:	all savebin installbin installdata
 update: 	all installbin installdata
 
 mostlyclean:
-		rm -f *.o DEADJOE config.new *~ *.orig lib/*.o
+		rm -f -- *.o DEADJOE config.new *~ *.orig lib/*.o
 
 clean: mostlyclean
-		rm -f $(PROGS)
+		rm -f -- $(PROGS)
 		@for i in $(SUBDIRS); do (cd $$i && $(MAKE) clean) ; done
 		@cd po && $(MAKE) clean
 
 cleanconfig:
-		rm -f config.h
+		rm -f -- config.h
 
 clobber: 	clean
-		rm -f $(PROGS) config.h version.h config.status config.make
+		rm -f -- $(PROGS) config.h version.h config.status config.make
 		@for i in $(SUBDIRS); do (cd $$i && $(MAKE) clobber) ; done
 
 
 dist:
-		rm -rf net-tools-$(RELEASE)
+		rm -rf -- net-tools-$(RELEASE)
 		git archive --prefix=net-tools-$(RELEASE)/ HEAD | tar xf -
 		$(MAKE) -C net-tools-$(RELEASE)/po $@
 		tar cf - net-tools-$(RELEASE)/ | xz > net-tools-$(RELEASE).tar.xz
-		rm -rf net-tools-$(RELEASE)
+		rm -rf -- net-tools-$(RELEASE)
 
 distcheck:	dist
 		tar xf net-tools-$(RELEASE).tar.xz
 		yes "" | $(MAKE) -C net-tools-$(RELEASE) config
 		$(MAKE) -C net-tools-$(RELEASE)
-		rm -rf net-tools-$(RELEASE)
+		rm -rf -- net-tools-$(RELEASE)
 		@printf "\nThe tarball is ready to go:\n%s\n" "`du -b net-tools-$(RELEASE).tar.xz`"
 
 config.h: 	config.in Makefile
@@ -158,37 +170,40 @@ subdirs:	libdir
 		@for i in $(SUBDIRS:$(NET_LIB_PATH)/=); do $(MAKE) -C $$i || exit $$? ; done
 
 ifconfig:	$(NET_LIB) ifconfig.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ifconfig.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ifconfig.o $(NLIB) $(LDLIBS)
 
 nameif:		$(NET_LIB) nameif.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ nameif.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ nameif.o $(NLIB) $(LDLIBS)
+
+hostname:	hostname.o
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ hostname.o $(DNLIB) $(LDLIBS)
 
 route:		$(NET_LIB) route.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ route.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ route.o $(NLIB) $(LDLIBS)
 
 arp:		$(NET_LIB) arp.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ arp.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ arp.o $(NLIB) $(LDLIBS)
 
 rarp:		$(NET_LIB) rarp.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ rarp.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ rarp.o $(NLIB) $(LDLIBS)
 
 slattach:	$(NET_LIB) slattach.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ slattach.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ slattach.o $(NLIB) $(LDLIBS)
 
 plipconfig:	$(NET_LIB) plipconfig.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ plipconfig.o $(NLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ plipconfig.o $(NLIB) $(LDLIBS)
 
 netstat:	$(NET_LIB) netstat.o statistics.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ netstat.o statistics.o $(NLIB) $(RESLIB) $(SELIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ netstat.o statistics.o $(NLIB) $(SELIB) $(LDLIBS)
 
 iptunnel:	$(NET_LIB) iptunnel.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ iptunnel.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ iptunnel.o $(NLIB) $(LDLIBS)
 
 ipmaddr:	$(NET_LIB) ipmaddr.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ipmaddr.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ ipmaddr.o $(NLIB) $(LDLIBS)
 
 mii-tool:	$(NET_LIB) mii-tool.o
-		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ mii-tool.o $(NLIB) $(RESLIB)
+		$(CC) $(CFLAGS) $(LDFLAGS) -o $@ mii-tool.o $(NLIB) $(LDLIBS)
 
 installbin:
 	@echo
@@ -198,20 +213,38 @@ installbin:
 	@echo
 	install -m 0755 -d ${BASEDIR}${SBINDIR}
 	install -m 0755 -d ${BASEDIR}${BINDIR}
-	install -m 0755 arp        ${BASEDIR}${SBINDIR}
 	install -m 0755 ifconfig   ${BASEDIR}${BINDIR}
 	install -m 0755 nameif     ${BASEDIR}${SBINDIR}
 	install -m 0755 netstat    ${BASEDIR}${BINDIR}
-	install -m 0755 plipconfig $(BASEDIR)${SBINDIR}
-	install -m 0755 rarp       ${BASEDIR}${SBINDIR}
 	install -m 0755 route      ${BASEDIR}${BINDIR}
-	install -m 0755 slattach   $(BASEDIR)${SBINDIR}
+ifeq ($(HAVE_ARP_TOOLS),1)
+	install -m 0755 arp        ${BASEDIR}${SBINDIR}
+	install -m 0755 rarp       ${BASEDIR}${SBINDIR}
+endif
+ifeq ($(HAVE_HOSTNAME_TOOLS),1)
+	install -m 0755 hostname   ${BASEDIR}${BINDIR}
+	ln -fs hostname $(BASEDIR)${BINDIR}/dnsdomainname
+ifeq ($(HAVE_HOSTNAME_SYMLINKS),1)
+	ln -fs hostname $(BASEDIR)${BINDIR}/ypdomainname
+	ln -fs hostname $(BASEDIR)${BINDIR}/nisdomainname
+	ln -fs hostname $(BASEDIR)${BINDIR}/domainname
+endif
+ifeq ($(HAVE_AFDECnet),1)
+	ln -fs hostname $(BASEDIR)${BINDIR}/nodename
+endif
+endif
 ifeq ($(HAVE_IP_TOOLS),1)
 	install -m 0755 ipmaddr    $(BASEDIR)${SBINDIR}
 	install -m 0755 iptunnel   $(BASEDIR)${SBINDIR}
 endif
 ifeq ($(HAVE_MII),1)
 	install -m 0755 mii-tool   $(BASEDIR)${SBINDIR}
+endif
+ifeq ($(HAVE_PLIP_TOOLS),1)
+	install -m 0755 plipconfig $(BASEDIR)${SBINDIR}
+endif
+ifeq ($(HAVE_SERIAL_TOOLS),1)
+	install -m 0755 slattach   $(BASEDIR)${SBINDIR}
 endif
 
 savebin:
