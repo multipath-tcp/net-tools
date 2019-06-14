@@ -115,7 +115,7 @@
 #endif
 
 /* prototypes for statistics.c */
-void parsesnmp(int, int, int, int);
+void parsesnmp(int, int, int, int, int);
 void parsesnmp6(int, int, int);
 
 typedef enum {
@@ -2315,7 +2315,7 @@ int main
 
         if (!strcmp(afname, "inet")) {
 #if HAVE_AFINET
-            parsesnmp(flag_raw, flag_tcp, flag_udp, flag_sctp);
+            parsesnmp(flag_raw, flag_tcp, flag_udp, flag_sctp, flag_mptcp);
 #else
             ENOSUPP("netstat", "AF INET");
 #endif

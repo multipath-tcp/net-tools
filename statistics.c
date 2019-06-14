@@ -13,7 +13,7 @@
 #include "intl.h"
 #include "proc.h"
 
-static int print_static,f_raw,f_tcp,f_udp,f_sctp,f_unknown = 1;
+static int print_static,f_raw,f_tcp,f_udp,f_sctp,f_mptcp,f_unknown = 1;
 
 enum State {
     number = 0, opt_number, i_forward, i_inp_icmp, i_outp_icmp, i_rto_alg,
@@ -295,6 +295,51 @@ static const struct entry Sctptab[] =
     {"SctpShutdowns", N_("%llu Number of Graceful Terminations"), number},
 };
 
+static const struct entry Mptcptab[] =
+{   /* Keep the entries sorted! */
+    {"AddAddrRx", N_("%llu Number of ADD_ADDRs received"), number},
+    {"AddAddrTx", N_("%llu Number of ADD_ADDRs sent"), number},
+    {"DSSNoMatchTCP", N_("%llu Number of DSS-mapping/TCP sequence number mismatches"), number},
+    {"DSSNotMatching", N_("%llu Number of new mismatched mappings"), number},
+    {"DSSPurgeOldSubSegs", N_("%llu Number of skbs removed from the rcv-queue due to missing DSS-mapping"), number},
+    {"DSSSplitTail", N_("%llu Number of trimmed segments at the tail"), number},
+    {"DSSTrimHead", N_("%llu Number of trimmed segments at the head"), number},
+    {"InfiniteMapRx", N_("%llu Number of infinite mappings received"), number},
+    {"MPCapableACKRX", N_("%llu Number of received third ACKs with MP_CAPABLE"), number},
+    {"MPCapableFallbackACK", N_("%llu Number of server-side fallbacks during the 3-way handshake"), number},
+    {"MPCapableFallbackSYNACK", N_("%llu Number of client-side fallbacks during the 3-way handshake"), number},
+    {"MPCapableRetransFallback", N_("%llu Number of times the client-side stopped sending MP_CAPABLE after too many SYN-retransmissions"),
+     number},
+    {"MPCapableSYNACKRX", N_("%llu Number of received SYN/ACKs with MP_CAPABLE"), number},
+    {"MPCapableSYNRX", N_("%llu Number of received SYNs with MP_CAPABLE"), number},
+    {"MPCapableSYNTX", N_("%llu Number of sent SYNs with MP_CAPABLE"), number},
+    {"MPCsumFail", N_("%llu Number of received segments with an invalid checksum"), number},
+    {"MPFailRX", N_("%llu Number of MP_FAILs received"), number},
+    {"MPFallbackAckInit", N_("%llu Number of fallbacks upon ack without data-ack on initial subflow"), number},
+    {"MPFallbackAckSub", N_("%llu Number of fallbacks upon ack without data-ack on new subflow"), number},
+    {"MPFallbackDataInit", N_("%llu Number of fallbacks upon data without DSS at the beginning on initial subflow"), number},
+    {"MPFallbackDataSub", N_("%llu Number of fallbacks upon data without DSS at the beginning on new subflow"), number},
+    {"MPFastcloseRX", N_("%llu Number of FAST_CLOSEs received"), number},
+    {"MPFastcloseTX", N_("%llu Number of FAST_CLOSEs sent"), number},
+    {"MPJoinAckHMacFailure", N_("%llu Number of HMAC mismatches on ACK + MP_JOIN"), number},
+    {"MPJoinAckMissing", N_("%llu Number of third ACKs on a new subflow not containing a MP_JOIN"), number},
+    {"MPJoinAckRTO", N_("%llu Number of retransmission timeouts for third ACK + MP_JOIN"), number},
+    {"MPJoinAckRexmit", N_("%llu Number of retransmitted ACK + MP_JOINs"), number},
+    {"MPJoinAckRx", N_("%llu Number of ACK + MP_JOINs received"), number},
+    {"MPJoinAlreadyFallenback", N_("%llu Number of received MP_JOINs on a session that has fallen back to reg. TCP"), number},
+    {"MPJoinNoTokenFound", N_("%llu Number of received MP_JOINs without a token"), number},
+    {"MPJoinSynAckHMacFailure", N_("%llu Number of received SYN/ACK + MP_JOINs with a HMAC mismatch"), number},
+    {"MPJoinSynAckRx", N_("%llu Number of SYN/ACK + MP_JOINs received"), number},
+    {"MPJoinSynRx", N_("%llu Number of SYN + MP_JOINs received"), number},
+    {"MPJoinSynTx", N_("%llu Number of SYN + MP_JOINs sent"), number},
+    {"MPRemoveAddrSubDelete", N_("%llu Number of subflows removed due to REMOVE_ADDR"), number},
+    {"MPTCPCsumEnabled", N_("%llu Number of MPTCP connections created with DSS-checksum enabled"), number},
+    {"MPTCPRetrans", N_("%llu Number of segments retransmitted at the MPTCP level"), number},
+    {"NoDSSInWindow", N_("%llu Number of too many packets received without a DSS option errors"), number},
+    {"RemAddrRx", N_("%llu Number of REMOVE_ADDRs received"), number},
+    {"RemAddrTx", N_("%llu Number of REMOVE_ADDRs sent"), number},
+};
+
 struct tabtab {
     const char *title;
     const struct entry *tab;
@@ -310,6 +355,7 @@ static const struct tabtab snmptabs[] =
     {"Udp", Udptab, sizeof(Udptab), &f_udp},
     {"Sctp", Sctptab, sizeof(Sctptab), &f_sctp},
     {"TcpExt", Tcpexttab, sizeof(Tcpexttab), &f_tcp},
+    {"Mptcp", Mptcptab, sizeof(Mptcptab), &f_mptcp},
     {NULL}
 };
 
@@ -503,13 +549,13 @@ static void process6_fd(FILE *f)
 }
 
 /* Process a file with name-value lines (like /proc/net/sctp/snmp) */
-static void process_fd2(FILE *f, const char *filename)
+static void process_fd2(FILE *f, const char *filename, const char *tablename)
 {
     char buf1[1024];
     char *sp;
     const struct tabtab *tab;
 
-    tab = newtable(snmptabs, "Sctp");
+    tab = newtable(snmptabs, tablename);
 
     while (fgets(buf1, sizeof buf1, f)) {
 	sp = buf1 + strcspn(buf1, " \t\n");
@@ -527,11 +573,11 @@ static void process_fd2(FILE *f, const char *filename)
     }
 }
 
-void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp)
+void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp, int flag_mptcp)
 {
     FILE *f;
 
-    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp; f_sctp = flag_sctp;
+    f_raw = flag_raw; f_tcp = flag_tcp; f_udp = flag_udp; f_sctp = flag_sctp; f_mptcp = flag_mptcp;
 
     f = proc_fopen("/proc/net/snmp");
     if (!f) {
@@ -561,11 +607,20 @@ void parsesnmp(int flag_raw, int flag_tcp, int flag_udp, int flag_sctp)
 
     f = proc_fopen("/proc/net/sctp/snmp");
     if (f) {
-	process_fd2(f,"/proc/net/sctp/snmp");
+	process_fd2(f,"/proc/net/sctp/snmp", "Sctp");
 	if (ferror(f)) {
 	    perror("/proc/net/sctp/snmp");
 	    fclose(f);
 	}
+    }
+
+    f = proc_fopen("/proc/net/mptcp_net/snmp");
+    if (f) {
+        process_fd2(f,"/proc/net/mptcp_net/snmp", "Mptcp");
+        if (ferror(f)) {
+            perror("/proc/net/mptcp_net/snmp");
+            fclose(f);
+        }
     }
 }
 
