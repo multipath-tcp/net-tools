@@ -1212,14 +1212,14 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 	int d, ipv6, num, local_port, rem_port, state, nsub;
 	unsigned long txq, rxq, local_token, remote_token, inode;
 	char rem_addr[128], local_addr[128];
-	struct aftype *ap;
+	struct sockaddr_storage localsas, remsas;
+	struct sockaddr_in *localaddr = (struct sockaddr_in *)&localsas;
+	struct sockaddr_in *remaddr = (struct sockaddr_in *)&remsas;
+	const struct aftype *ap;
 #if HAVE_AFINET6
-	struct sockaddr_in6 localaddr, remaddr;
 	char addr6[INET6_ADDRSTRLEN];
 	struct in6_addr in6;
 	extern struct aftype inet6_aftype;
-#else
-	struct sockaddr_in localaddr, remaddr;
 #endif
 
 	if (lnr == 0)
@@ -1230,44 +1230,44 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 			&ipv6, local_addr, &local_port, rem_addr, &rem_port, 
 			&state, &nsub, &txq, &rxq, &inode);
 
-        if (strlen(local_addr) > 8) {
+	if (strlen(local_addr) > 8) {
 #if HAVE_AFINET6
 		/* Demangle what the kernel gives us */
 		sscanf(local_addr, "%08X%08X%08X%08X",
 			&in6.s6_addr32[0], &in6.s6_addr32[1],
 			&in6.s6_addr32[2], &in6.s6_addr32[3]);
 		inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-		inet6_aftype.input(1, addr6, (struct sockaddr *) &localaddr);
+		inet6_aftype.input(1, addr6, &localsas);
 		sscanf(rem_addr, "%08X%08X%08X%08X",
 			&in6.s6_addr32[0], &in6.s6_addr32[1],
 			&in6.s6_addr32[2], &in6.s6_addr32[3]);
 		inet_ntop(AF_INET6, &in6, addr6, sizeof(addr6));
-		inet6_aftype.input(1, addr6, (struct sockaddr *) &remaddr);
-		localaddr.sin6_family = AF_INET6;
-		remaddr.sin6_family = AF_INET6;
+		inet6_aftype.input(1, addr6, &remsas);
+		localsas.ss_family = AF_INET6;
+		remsas.ss_family = AF_INET6;
 #endif
-} else {
+	} else {
 		sscanf(local_addr, "%X",
 			&((struct sockaddr_in *) &localaddr)->sin_addr.s_addr);
 		sscanf(rem_addr, "%X",
 			&((struct sockaddr_in *) &remaddr)->sin_addr.s_addr);
-		((struct sockaddr *) &localaddr)->sa_family = AF_INET;
-		((struct sockaddr *) &remaddr)->sa_family = AF_INET;
-        }
+		localsas.ss_family = AF_INET;
+		remsas.ss_family = AF_INET;
+	}
 
 	if (num < 12) {
 		fprintf(stderr, _("warning, got bogus mptcp line.\n"));
 		return;
-        }
+	}
 
-	if ((ap = get_afntype(((struct sockaddr *) &localaddr)->sa_family)) == NULL) {
+	if ((ap = get_afntype(localsas.ss_family)) == NULL) {
 		fprintf(stderr, _("netstat: unsupported address family %d !\n"),
-			((struct sockaddr *) &localaddr)->sa_family);
+			localsas.ss_family);
 		return;
 	}
 
-	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localaddr, local_port, "tcp");
-	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remaddr, rem_port, "tcp");
+	addr_do_one(local_addr, sizeof(local_addr), 22, ap, &localsas, local_port, "tcp");
+	addr_do_one(rem_addr, sizeof(rem_addr), 22, ap, &remsas, rem_port, "tcp");
 
 	printf("%-4s %6ld %6ld %-*s %-*s %-11s",
 		prot, rxq, txq, (int)netmax(23,strlen(local_addr)), local_addr,
@@ -1281,7 +1281,7 @@ static void mptcp_do_one(int lnr, const char *line, const char *prot)
 
 static int mptcp_info(void)
 {
-    INFO_GUTS(_PATH_PROCNET_MPTCP, "AF INET (mptcp)", mptcp_do_one, "mptcp");
+	INFO_GUTS(_PATH_PROCNET_MPTCP, "AF INET (mptcp)", mptcp_do_one, "mptcp");
 }
 
 static int notnull(const struct sockaddr_storage *sas)
